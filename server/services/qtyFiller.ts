@@ -28,22 +28,32 @@ export class QTYFiller {
     const filledRows: FillResult['filledRows'] = [];
     const errors: string[] = [];
 
-    // Add reference sheets with exact names from reference file
+    // Add raw data sheets for Afimilk NZ structure
     if (rawViewData) {
-      const storage = rawViewData.get('Storage');
-      if (storage) this.addStorageSheet(workbook, storage, 'Storge');
+      // Raw data sheets from Tableau views
+      const inbound = rawViewData.get('Inbound');
+      if (inbound) this.addRawSheet(workbook, inbound, 'Inbound');
 
-      const txns = rawViewData.get('Transactions');
-      if (txns) this.addRawSheet(workbook, txns, 'HK transctions');
+      const outbound = rawViewData.get('Outbound');
+      if (outbound) this.addRawSheet(workbook, outbound, 'Outbound');
+
+      const storage = rawViewData.get('Storage');
+      if (storage) this.addRawSheet(workbook, storage, 'Storage');
       
-      const managment = rawViewData.get('Managment');
-      if (managment) this.addRawSheet(workbook, managment, 'Managment');
+      const vas = rawViewData.get('VAS');
+      if (vas) this.addRawSheet(workbook, vas, 'VAS');
       
-      const eorIor = rawViewData.get('EOR/IOR');
-      if (eorIor) this.addRawSheet(workbook, eorIor, 'EOR-IOR');
+      const management = rawViewData.get('Management') || rawViewData.get('Managment');
+      if (management) this.addRawSheet(workbook, management, 'Management');
       
       const pivot = rawViewData.get('Pivot');
-      if (pivot) this.addRawSheet(workbook, pivot, 'COURIER FEES');
+      if (pivot) this.addRawSheet(workbook, pivot, 'Pivot');
+      
+      const pivotOut = rawViewData.get('Pivot Out');
+      if (pivotOut) this.addRawSheet(workbook, pivotOut, 'Pivot Out');
+      
+      const exw = rawViewData.get('EXW');
+      if (exw) this.addRawSheet(workbook, exw, 'EXW');
     }
 
     if (transactions && transactions.length > 0) {

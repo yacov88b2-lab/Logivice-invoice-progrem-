@@ -333,7 +333,11 @@ export class TableauAPIClient {
                        row['Day of Created At'] ||
                        row['Day of Created At (Stats)'] ||
                        row['Month of Created At'] ||
-                       row['Month of Created At (Orders)'];
+                       row['Month of Created At (Orders)'] ||
+                       row['Inbound at'] || // Afimilk NZ Inbound view
+                       row['Shipped out'] || // Afimilk NZ Outbound view
+                       row['Inbound At'] ||
+                       row['shipped_out'];
       
       if (!dateValue) return true; // Keep rows without dates (can't filter)
       
