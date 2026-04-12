@@ -1,0 +1,42 @@
+name: Auto Commit Changes
+
+on:
+  schedule:
+    # Run every 4 hours
+    - cron: '0 */4 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  auto-commit:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Configure Git
+      run: |
+        git config --local user.email "auto-commit@github.com"
+        git config --local user.name "GitHub Auto Commit"
+    
+    - name: Check for changes
+      id: check_changes
+      run: |
+        git add -A
+        if git diff --cached --quiet; then
+          echo "No changes to commit"
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+        else
+          echo "Changes detected"
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Commit and push changes
+      if: steps.check_changes.outputs.has_changes == 'true'
+      run: |
+        git commit -m "Auto-commit: $(date +'%Y-%m-%d %H:%M:%S')"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
