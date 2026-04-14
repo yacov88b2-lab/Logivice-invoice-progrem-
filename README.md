@@ -28,8 +28,12 @@ npm install
 
 ### Run Development Server
 
-```bash
-npm run dev
+You can use `npm run dev` or `Start Here.bat` (Windows).
+
+If you run `Start Here.bat` from PowerShell, paths with spaces must be quoted, e.g.:
+
+```powershell
+& ".\Start Here.bat"
 ```
 
 This starts both the frontend (Vite) and backend (Express) concurrently.
