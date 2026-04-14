@@ -18,7 +18,11 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
+    // Sanitize filename: remove path traversal characters and limit length
+    const safeName = path.basename(file.originalname)
+      .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace unsafe chars with underscore
+      .substring(0, 100); // Limit length
+    cb(null, uniqueSuffix + '-' + safeName);
   }
 });
 
@@ -30,7 +34,8 @@ router.get('/', (req, res) => {
     const pricelists = PricelistModel.getAll();
     res.json(pricelists);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch pricelists' });
+    console.error('Error fetching pricelists:', error);
+    res.status(500).json({ error: 'Failed to fetch pricelists', details: (error as Error).message });
   }
 });
 
@@ -46,7 +51,8 @@ router.get('/:id', (req, res) => {
     
     res.json(pricelist);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch pricelist' });
+    console.error('Error fetching pricelist:', error);
+    res.status(500).json({ error: 'Failed to fetch pricelist', details: (error as Error).message });
   }
 });
 
@@ -80,10 +86,11 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     res.status(201).json(pricelist);
   } catch (error) {
+    console.error('Error creating pricelist:', error);
     if (req.file) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ error: 'Failed to create pricelist' });
+    res.status(500).json({ error: 'Failed to create pricelist', details: (error as Error).message });
   }
 });
 
@@ -125,10 +132,11 @@ router.put('/:id', upload.single('file'), (req, res) => {
     
     res.json(pricelist);
   } catch (error) {
+    console.error('Error updating pricelist:', error);
     if (req.file) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ error: 'Failed to update pricelist' });
+    res.status(500).json({ error: 'Failed to update pricelist', details: (error as Error).message });
   }
 });
 
@@ -155,7 +163,8 @@ router.delete('/:id', (req, res) => {
       res.status(500).json({ error: 'Failed to delete pricelist' });
     }
   } catch (error) {
-    res.status(500).json({ error: 'Failed to delete pricelist' });
+    console.error('Error deleting pricelist:', error);
+    res.status(500).json({ error: 'Failed to delete pricelist', details: (error as Error).message });
   }
 });
 
@@ -175,7 +184,8 @@ router.get('/:id/download', (req, res) => {
     
     res.download(pricelist.file_path);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to download file' });
+    console.error('Error downloading file:', error);
+    res.status(500).json({ error: 'Failed to download file', details: (error as Error).message });
   }
 });
 

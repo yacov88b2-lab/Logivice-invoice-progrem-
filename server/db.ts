@@ -65,10 +65,17 @@ export function initDatabase() {
   const admin = stmt.get('admin@logivice.com');
   
   if (!admin) {
+    // Generate secure random password or use env variable
+    const adminPassword = process.env.ADMIN_PASSWORD || 
+      Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    
     const insertAdmin = db.prepare(`
       INSERT INTO users (email, password, role) VALUES (?, ?, ?)
     `);
-    insertAdmin.run('admin@logivice.com', 'admin123', 'admin');
+    insertAdmin.run('admin@logivice.com', adminPassword, 'admin');
+    console.log('Default admin created. Password stored securely.');
   }
 
   console.log('Database initialized successfully');

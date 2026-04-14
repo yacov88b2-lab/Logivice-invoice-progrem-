@@ -82,9 +82,10 @@ export class QTYFiller {
         const oldTotalCell = worksheet[totalCellRef];
         const rateCell = worksheet[rateCellRef];
 
-        const oldQty = oldQtyCell ? (oldQtyCell.v || oldQtyCell.value) : null;
-        const oldTotal = oldTotalCell ? (oldTotalCell.v || oldTotalCell.value) || 0 : 0;
-        const rate = rateCell ? (rateCell.v || rateCell.value) || 0 : 0;
+        // Use nullish coalescing (??) to properly handle values like 0
+        const oldQty = oldQtyCell ? (oldQtyCell.v ?? oldQtyCell.value) : null;
+        const oldTotal = oldTotalCell ? (oldTotalCell.v ?? oldTotalCell.value ?? 0) : 0;
+        const rate = rateCell ? (rateCell.v ?? rateCell.value ?? 0) : 0;
         const newTotal = newQty * rate;
 
         worksheet[qtyCellRef] = { ...oldQtyCell, v: newQty, value: newQty, t: 'n', w: String(newQty) };

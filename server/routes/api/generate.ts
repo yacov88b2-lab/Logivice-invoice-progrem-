@@ -178,7 +178,7 @@ router.post('/invoice', async (req, res) => {
 
   } catch (error) {
     console.error('Error generating invoice:', error);
-    res.status(500).json({ error: 'Failed to generate invoice' });
+    res.status(500).json({ error: 'Failed to generate invoice', details: (error as Error).message });
   }
 });
 
@@ -296,7 +296,7 @@ router.post('/preview', async (req, res) => {
 
   } catch (error) {
     console.error('Error previewing mapping:', error);
-    res.status(500).json({ error: 'Failed to preview mapping' });
+    res.status(500).json({ error: 'Failed to preview mapping', details: (error as Error).message });
   }
 });
 
@@ -316,7 +316,8 @@ router.get('/download/:auditId', (req, res) => {
 
     res.download(auditEntry.output_file_path);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to download file' });
+    console.error('Error downloading file:', error);
+    res.status(500).json({ error: 'Failed to download file', details: (error as Error).message });
   }
 });
 

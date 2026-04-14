@@ -19,8 +19,6 @@ export class TableauAPIClient {
     try {
       console.log('[Tableau] Attempting authentication...');
       console.log('[Tableau] Token name:', TABLEAU_TOKEN_NAME);
-      console.log('[Tableau] Full token from .env:', JSON.stringify(TABLEAU_TOKEN_SECRET));
-      console.log('[Tableau] Token after split:', TABLEAU_TOKEN_SECRET.split(':')[0]);
       console.log('[Tableau] Base URL:', this.baseUrl);
       const response = await fetch(`${this.baseUrl}/api/3.19/auth/signin`, {
         method: 'POST',
@@ -77,7 +75,6 @@ export class TableauAPIClient {
     }
     console.log('[Tableau] Getting site ID for logivice...');
     const headers = await this.getAuthHeaders();
-    console.log('[Tableau] Headers for site request:', JSON.stringify(headers));
     const response = await fetch(
       `${this.baseUrl}/api/3.19/sites/logivice`,
       { headers }
@@ -322,8 +319,9 @@ export class TableauAPIClient {
   
   // Filter data rows by date range (client-side)
   private filterByDateRange(data: any[], startDate: string, endDate: string): any[] {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    // Parse dates as local dates to avoid timezone issues
+    const start = this.parseLocalDate(startDate);
+    const end = this.parseLocalDate(endDate);
     end.setHours(23, 59, 59, 999); // Include full end day
     
     return data.filter(row => {
@@ -341,14 +339,55 @@ export class TableauAPIClient {
       
       if (!dateValue) return true; // Keep rows without dates (can't filter)
       
-      const rowDate = new Date(dateValue);
-      if (isNaN(rowDate.getTime())) return true; // Keep rows with invalid dates
+      const rowDate = this.parseDateValue(dateValue);
+      if (!rowDate || isNaN(rowDate.getTime())) return true; // Keep rows with invalid dates
       
       return rowDate >= start && rowDate <= end;
     });
   }
 
-  // Parse CSV data from Tableau view
+  // Parse a date string as local date (YYYY-MM-DD) to avoid timezone issues
+  private parseLocalDate(dateStr: string): Date {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day); // month is 0-indexed in JS Date
+  }
+
+  // Parse various date value formats from Tableau
+  private parseDateValue(dateValue: any): Date | null {
+    if (!dateValue) return null;
+    
+    // If it's already a Date object
+    if (dateValue instanceof Date) return dateValue;
+    
+    const str = String(dateValue).trim();
+    
+    // Try ISO format first
+    const isoDate = new Date(str);
+    if (!isNaN(isoDate.getTime())) return isoDate;
+    
+    // Try "1 February 2026" format (Tableau default)
+    const tableauMatch = str.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
+    if (tableauMatch) {
+      const monthNames = ['january', 'february', 'march', 'april', 'may', 'june',
+                          'july', 'august', 'september', 'october', 'november', 'december'];
+      const day = parseInt(tableauMatch[1]);
+      const month = monthNames.indexOf(tableauMatch[2].toLowerCase());
+      const year = parseInt(tableauMatch[3]);
+      if (month >= 0) {
+        return new Date(year, month, day);
+      }
+    }
+    
+    // Try MM/DD/YYYY format
+    const usMatch = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (usMatch) {
+      return new Date(parseInt(usMatch[3]), parseInt(usMatch[1]) - 1, parseInt(usMatch[2]));
+    }
+    
+    return null;
+  }
+
+  // Parse CSV data from Tableau view - properly handles quoted fields with commas
   private parseCSVData(csvText: string): any {
     const lines = csvText.split('\n').filter(line => line.trim());
     if (lines.length < 2) {
@@ -357,12 +396,12 @@ export class TableauAPIClient {
     }
     
     // Parse header
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    const headers = this.parseCSVLine(lines[0]);
     console.log('[Tableau] CSV headers:', headers.join(', '));
     
     // Parse data rows
     const data = lines.slice(1).map(line => {
-      const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+      const values = this.parseCSVLine(line);
       const row: any = {};
       headers.forEach((header, i) => {
         row[header] = values[i] || '';
@@ -372,6 +411,41 @@ export class TableauAPIClient {
     
     console.log('[Tableau] Parsed CSV rows:', data.length);
     return { data };
+  }
+
+  // Parse a single CSV line respecting quoted fields
+  private parseCSVLine(line: string): string[] {
+    const values: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+      
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          // Escaped quote inside quoted field
+          current += '"';
+          i++; // Skip next quote
+        } else {
+          // Toggle quote state
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        // End of field
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    
+    // Don't forget the last field
+    values.push(current.trim());
+    
+    // Clean up quotes from values
+    return values.map(v => v.replace(/^"|"$/g, ''));
   }
 
   // Fetch raw view data along with transactions
