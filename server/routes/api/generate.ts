@@ -41,11 +41,13 @@ router.post('/invoice', async (req, res) => {
     // Read pricelist file
     const pricelistBuffer = fs.readFileSync(pricelist.file_path);
 
+    const isAfimilkBilling = String(pricelist.customer_name || '').toLowerCase().includes('afimilk');
+
     // Get transactions - either from Excel file or Tableau API
     let transactions;
     let rawViewData = new Map<string, any[]>();
     
-    if (use_excel_data) {
+    if (use_excel_data && !isAfimilkBilling) {
       // First try to extract from the uploaded Excel file itself (Analyze sheet)
       transactions = ExcelDataExtractor.extractFromAnalyzeSheet(pricelistBuffer);
       
@@ -111,15 +113,17 @@ router.post('/invoice', async (req, res) => {
       `${pricelist.customer_name}_${pricelist.warehouse_code}_${timestamp}.xlsx`
     );
 
-    // Fill QTY and generate invoice (with raw Tableau data sheets)
-    const fillResult = QTYFiller.fill(
-      pricelistBuffer,
-      pricelist.template_structure,
-      quantityMap,
-      outputPath,
-      transactions,
-      rawViewData // Pass raw Tableau view data for exact column matching
-    );
+    // Fill QTY and generate invoice
+    const fillResult = isAfimilkBilling
+      ? await QTYFiller.fillAfimilkPreserveTemplate(pricelistBuffer, outputPath, transactions, rawViewData)
+      : QTYFiller.fill(
+          pricelistBuffer,
+          pricelist.template_structure,
+          quantityMap,
+          outputPath,
+          transactions,
+          rawViewData // Pass raw Tableau view data for exact column matching
+        );
 
     // Log audit entry
     const auditEntry = AuditLogModel.create({
