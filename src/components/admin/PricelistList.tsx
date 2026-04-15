@@ -13,6 +13,7 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const fetchPricelists = useCallback(async () => {
     try {
@@ -32,14 +33,13 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
   }, [fetchPricelists, refreshTrigger]);
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this pricelist?')) return;
-    
     try {
       setDeleting(id);
       await api.deletePricelist(id);
       onRefresh();
     } catch (err) {
-      alert('Failed to delete pricelist');
+      const msg = err instanceof Error ? err.message : 'Failed to delete pricelist';
+      alert(msg);
     } finally {
       setDeleting(null);
     }
@@ -77,6 +77,40 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
 
   return (
     <div className="overflow-x-auto">
+      {confirmDeleteId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-lg">
+            <div className="p-6">
+              <div className="text-base font-semibold text-gray-900">
+                You are about to delete a customer price list; this action is permanent.
+              </div>
+              <div className="mt-2 text-sm text-gray-700">Are you sure you want to continue?</div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const id = confirmDeleteId;
+                    setConfirmDeleteId(null);
+                    await handleDelete(id);
+                  }}
+                  disabled={deleting === confirmDeleteId}
+                  className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting === confirmDeleteId ? 'Deleting...' : 'Yes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <table className="w-full border-collapse">
         <thead>
           <tr className="bg-gray-100 border-b">
@@ -115,8 +149,8 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
                     Edit
                   </button>
                   <button
-                    onClick={() => handleDelete(p.id)}
-                    disabled={deleting === p.id}
+                    onClick={() => setConfirmDeleteId(p.id)}
+                    disabled={deleting === p.id || confirmDeleteId !== null}
                     className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
                   >
                     {deleting === p.id ? 'Deleting...' : 'Delete'}

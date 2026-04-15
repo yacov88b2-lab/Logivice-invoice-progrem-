@@ -36,11 +36,35 @@ export const api = {
     const res = await fetch(`${API_BASE}/pricelists/${id}`, {
       method: 'DELETE',
     });
-    if (!res.ok) throw new Error('Failed to delete pricelist');
+    if (!res.ok) {
+      let msg = 'Failed to delete pricelist';
+      try {
+        const data = await res.json();
+        if (data?.error) msg = String(data.error);
+      } catch {
+        // ignore
+      }
+      throw new Error(msg);
+    }
   },
 
   downloadPricelist: (id: number) => {
     return `${API_BASE}/pricelists/${id}/download`;
+  },
+
+  getTableauOptions: async () => {
+    const res = await fetch(`${API_BASE}/tableau/options`);
+    if (!res.ok) {
+      let msg = 'Failed to fetch Tableau options';
+      try {
+        const data = await res.json();
+        if (data?.error) msg = String(data.error);
+      } catch {
+        // ignore
+      }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<{ customers: string[]; warehouses: string[] }>;
   },
 
   // Generation

@@ -22,8 +22,19 @@ A universal Excel processing application for logistics billing. Administrators u
 
 ### Installation
 
+Run commands from the project root (the folder that contains `package.json`).
+
 ```bash
 npm install
+```
+
+If you get a PowerShell error like `npm.ps1 cannot be loaded because running scripts is disabled`:
+
+- **Option 1 (recommended)**: run `npm install` from **Command Prompt (cmd)** instead of PowerShell.
+- **Option 2**: in PowerShell run:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
 
 ### Run Development Server
@@ -101,11 +112,19 @@ Header row is auto-detected by looking for "Rate", "QTY", "Total" keywords.
 
 Configure Tableau credentials via environment variables (see `.env`).
 
-- Base URL: `https://dub01.online.tableau.com`
-- Site: `logivice`
+- Base URL: e.g. `https://dub01.online.tableau.com`
+- Site: e.g. `logivice`
 - Token name/value: stored in `.env` (do not commit tokens)
 
-For development, mock transaction data is used. In production, implement actual Tableau REST API calls in `server/services/tableauAPI.ts`.
+For development, mock transaction data may be used. In production, implement actual Tableau REST API calls in `server/services/tableauAPI.ts`.
+
+## Afimilk Excel Generation Notes
+
+Afimilk invoice generation uses an OpenXML patch approach (zip-level edits) to preserve the uploaded pricelist template sheets exactly.
+
+- The Storage sheet is renamed to `Storage MM YYYY` and filled in columns B-E.
+- Two sheets are ensured in the output file: `Management` and `Analyze`.
+- Dependencies used by this path include `jszip` and `fast-xml-parser`.
 
 ## Admin Pricelist Management Notes
 

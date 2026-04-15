@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import db from '../db';
 import { PricelistModel } from '../models/Pricelist';
 import { TemplateAnalyzer } from '../services/templateAnalyzer';
 
@@ -149,10 +150,19 @@ router.delete('/:id', (req, res) => {
     if (!pricelist) {
       return res.status(404).json({ error: 'Pricelist not found' });
     }
+
+    db.prepare('DELETE FROM audit_logs WHERE pricelist_id = ?').run(id);
     
     // Delete the file
     if (fs.existsSync(pricelist.file_path)) {
-      fs.unlinkSync(pricelist.file_path);
+      try {
+        fs.unlinkSync(pricelist.file_path);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        return res.status(500).json({
+          error: `Failed to delete pricelist file. Close the Excel file if it is open and try again. Details: ${err.message}`
+        });
+      }
     }
     
     const success = PricelistModel.delete(id);
@@ -163,8 +173,13 @@ router.delete('/:id', (req, res) => {
       res.status(500).json({ error: 'Failed to delete pricelist' });
     }
   } catch (error) {
+<<<<<<< Updated upstream
     console.error('Error deleting pricelist:', error);
     res.status(500).json({ error: 'Failed to delete pricelist', details: (error as Error).message });
+=======
+    const err = error instanceof Error ? error : new Error(String(error));
+    res.status(500).json({ error: `Failed to delete pricelist. Details: ${err.message}` });
+>>>>>>> Stashed changes
   }
 });
 
