@@ -28,12 +28,10 @@ npm install
 
 ### Run Development Server
 
-You can use `npm run dev` or `Start Here.bat` (Windows).
+Run:
 
-If you run `Start Here.bat` from PowerShell, paths with spaces must be quoted, e.g.:
-
-```powershell
-& ".\Start Here.bat"
+```bash
+npm run dev
 ```
 
 This starts both the frontend (Vite) and backend (Express) concurrently.
@@ -54,9 +52,9 @@ npm run build
 1. Go to **Admin** tab
 2. Click **Upload New Pricelist**
 3. Enter:
-   - Pricelist Name (e.g., "AudioCodes CZ Warehouse")
-   - Customer Name (e.g., "AudioCodes")
-   - Warehouse Code (e.g., "CZ")
+   - Pricelist Name (format: `Customer name – Template YYYY`, e.g. `Afimilk – Template 2026`)
+   - Customer Name (select from dropdown)
+   - Warehouse Code (select from dropdown)
 4. Upload Excel template file
 5. System auto-analyzes structure
 
@@ -97,15 +95,21 @@ Header row is auto-detected by looking for "Rate", "QTY", "Total" keywords.
 - `POST /api/generate/preview` - Preview mapping (dry run)
 - `POST /api/generate/invoice` - Generate invoice
 - `GET /api/generate/download/:auditId` - Download generated file
+- `GET /api/tableau/options` - Customer/Warehouse option lists (used for admin dropdowns)
 
 ## Tableau API Configuration
 
-The app is configured with the provided token:
+Configure Tableau credentials via environment variables (see `.env`).
+
 - Base URL: `https://dub01.online.tableau.com`
 - Site: `logivice`
-- Token: `Windsurff`
+- Token name/value: stored in `.env` (do not commit tokens)
 
 For development, mock transaction data is used. In production, implement actual Tableau REST API calls in `server/services/tableauAPI.ts`.
+
+## Admin Pricelist Management Notes
+
+- Deleting a pricelist shows a confirmation prompt before the delete is performed.
 
 ## Architecture
 
