@@ -124,6 +124,12 @@ export function UserDashboard() {
         setLoading(true);
         setError(null);
 
+        const pad2 = (n: number) => String(n).padStart(2, '0');
+        const now = new Date();
+        const timestamp = `${pad2(now.getDate())}-${pad2(now.getMonth() + 1)}-${now.getFullYear()} ${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
+        const safeCustomer = String(selectedCustomer || preview?.pricelist?.name || 'Customer').trim();
+        const downloadName = `${safeCustomer} Total transaction matched and unmatched ${timestamp}.xlsx`;
+
         const res = await fetch('http://localhost:3001/api/generate/export-total', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -150,9 +156,7 @@ export function UserDashboard() {
         const a = document.createElement('a');
         a.href = url;
 
-        const cd = res.headers.get('content-disposition') || '';
-        const match = cd.match(/filename="?([^";]+)"?/i);
-        a.download = match?.[1] || 'Total.xlsx';
+        a.download = downloadName;
 
         document.body.appendChild(a);
         a.click();

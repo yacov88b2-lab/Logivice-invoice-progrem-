@@ -82,9 +82,9 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
           <div className="w-full max-w-md rounded-lg bg-white shadow-lg">
             <div className="p-6">
               <div className="text-base font-semibold text-gray-900">
-                You are about to delete a customer price list; this action is permanent.
+                You are about to permanently delete a customer price list.
               </div>
-              <div className="mt-2 text-sm text-gray-700">Are you sure you want to continue?</div>
+              <div className="mt-2 text-base font-semibold text-gray-900">This action cannot be undone.</div>
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"

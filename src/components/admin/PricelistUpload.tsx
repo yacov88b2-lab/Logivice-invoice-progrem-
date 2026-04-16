@@ -37,7 +37,13 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
         setOptionsLoading(true);
         const data = await api.getTableauOptions();
         if (!mounted) return;
-        setCustomers(data.customers || []);
+        const rawCustomers = data.customers || [];
+        const normalizedCustomers = rawCustomers.map(c => {
+          const v = String(c || '').trim();
+          if (v === 'Afimilk') return 'Afimilk New Zealand';
+          return v;
+        });
+        setCustomers(normalizedCustomers);
         setWarehouses(data.warehouses || []);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -53,6 +59,23 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
     };
   }, []);
 
+  useEffect(() => {
+    const customer = String(formData.customer_name || '').trim();
+    if (!customer) return;
+
+    // Temporary mapping (for now we work on Afimilk only). Later we will replace this
+    // with a customer->warehouse mapping sourced from Tableau.
+    const warehouseByCustomer: Record<string, string> = {
+      Afimilk: 'NZ',
+      'Afimilk New Zealand': 'NZ',
+    };
+
+    const wh = warehouseByCustomer[customer];
+    if (wh && formData.warehouse_code !== wh) {
+      setFormData(prev => ({ ...prev, warehouse_code: wh }));
+    }
+  }, [formData.customer_name, formData.warehouse_code]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -61,10 +84,15 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
       return;
     }
 
-    const escapedCustomer = formData.customer_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const nameRegex = new RegExp(`^${escapedCustomer}\\s*[–-]\\s*Template\\s+\\d{4}$`);
+    const customerTokens = String(formData.customer_name || '')
+      .trim()
+      .split(/[\s-]+/)
+      .filter(Boolean)
+      .map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const customerPattern = customerTokens.join('[\\s-]+');
+    const nameRegex = new RegExp(`^${customerPattern}\\s*[–-]\\s*Template\\s+\\d{4}$`);
     if (!nameRegex.test(formData.name.trim())) {
-      setError('Pricelist Name must be in format: Customer name – Template YYYY');
+      setError('Pricelist Name need to be in a format of “Customer name – Template YYYY”.');
       return;
     }
 
@@ -128,7 +156,10 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             <div className="flex gap-2">
               <select
                 value={formData.customer_name}
-                onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
+                onChange={(e) => {
+                  const customer = e.target.value;
+                  setFormData(prev => ({ ...prev, customer_name: customer }));
+                }}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 disabled={optionsLoading || loading}
               >
@@ -165,7 +196,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
                 value={formData.warehouse_code}
                 onChange={(e) => setFormData({ ...formData, warehouse_code: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                disabled={optionsLoading || loading}
+                disabled={optionsLoading || loading || ['Afimilk', 'Afimilk New Zealand'].includes(String(formData.customer_name || '').trim())}
               >
                 <option value="">Select warehouse...</option>
                 {sortedWarehouses.map(w => (

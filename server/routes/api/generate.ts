@@ -48,6 +48,7 @@ router.post('/export-total', async (req, res) => {
     );
 
     const matchedRows = (matches || []).map((m: any) => ({
+      status: 'Matched',
       transactionId: m.transaction?.id ?? '',
       date: m.transaction?.date ?? '',
       orderNumber: m.transaction?.orderNumber ?? '',
@@ -67,6 +68,7 @@ router.post('/export-total', async (req, res) => {
     }));
 
     const unmatchedRows = (unmatched || []).map((u: any) => ({
+      status: 'Unmatched',
       transactionId: u.transaction?.id ?? '',
       date: u.transaction?.date ?? '',
       orderNumber: u.transaction?.orderNumber ?? '',
@@ -76,12 +78,19 @@ router.post('/export-total', async (req, res) => {
       unitOfMeasure: u.transaction?.unitOfMeasure ?? '',
       description: u.transaction?.description ?? '',
       quantity: u.transaction?.quantity ?? '',
+      sheet: '',
+      row: '',
+      clause: '',
+      remark: '',
+      rate: '',
+      confidence: '',
       reason: u.reason ?? ''
     }));
 
+    const allRows = [...matchedRows, ...unmatchedRows];
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(matchedRows), 'Matched');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(unmatchedRows), 'Unmatched');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allRows), 'Transactions');
 
     // Add raw Tableau view sheets (each view name must be <= 31 chars in Excel)
     for (const [viewName, rows] of rawViewData.entries()) {
@@ -97,8 +106,8 @@ router.post('/export-total', async (req, res) => {
       XLSX.utils.book_append_sheet(wb, ws, safeSheetName || 'Raw');
     }
 
-    const safeName = String(pricelist.name || 'Pricelist').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
-    const filename = `${safeName}_Total_${start_date}_to_${end_date}.xlsx`;
+    const safeCustomer = String(pricelist.customer_name || 'Customer').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
+    const filename = `${safeCustomer}_Total_Transactions.xlsx`;
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
@@ -219,7 +228,14 @@ router.post('/invoice', async (req, res) => {
 
     // Fill QTY and generate invoice
     const fillResult = isAfimilkBilling
-      ? await QTYFiller.fillAfimilkPreserveTemplate(pricelistBuffer, outputPath, transactions, rawViewData)
+      ? await QTYFiller.fillAfimilkPreserveTemplate(
+          pricelistBuffer,
+          outputPath,
+          pricelist.template_structure,
+          quantityMap,
+          transactions,
+          rawViewData
+        )
       : QTYFiller.fill(
           pricelistBuffer,
           pricelist.template_structure,

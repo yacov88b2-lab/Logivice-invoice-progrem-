@@ -23,6 +23,8 @@ export class QTYFiller {
   static async fillAfimilkPreserveTemplate(
     pricelistBuffer: Buffer,
     outputPath: string,
+    templateStructure: TemplateStructure,
+    quantities: Map<string, number>,
     transactions?: Transaction[],
     rawViewData?: Map<string, any[]>
   ): Promise<FillResult> {
@@ -85,12 +87,72 @@ export class QTYFiller {
       zip.file(wbXmlPath, builder.build(wbObj));
 
       const outBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-      await this.writeBufferToFile(outputPath, outBuffer);
+
+      // Fill invoice QTY cells using SheetJS to avoid implementing full OpenXML cell patching
+      // (Afimilk templates must preserve original sheets/formulas as much as possible)
+      const workbook = XLSX.read(outBuffer, { type: 'buffer' });
+      this.fillInvoiceSheets(workbook, templateStructure, quantities, filledRows, errors);
+      XLSX.writeFile(workbook, outputPath);
 
       return { success: errors.length === 0, filePath: outputPath, filledRows, errors };
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       return { success: false, filePath: outputPath, filledRows, errors: [...errors, err.message] };
+    }
+  }
+
+  private static fillInvoiceSheets(
+    workbook: XLSX.WorkBook,
+    templateStructure: TemplateStructure,
+    quantities: Map<string, number>,
+    filledRows: FillResult['filledRows'],
+    errors: string[]
+  ) {
+    for (const sheet of templateStructure.sheets) {
+      if (sheet.type !== 'invoice') continue;
+      const worksheet = workbook.Sheets[sheet.name];
+      if (!worksheet) {
+        errors.push(`Sheet not found: ${sheet.name}`);
+        continue;
+      }
+
+      for (const item of sheet.lineItems) {
+        const key = this.getLineItemKey(item);
+        const newQty = quantities.get(key);
+        if (newQty === undefined) continue;
+
+        const { columns } = templateStructure;
+        const qtyCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.qty });
+        const totalCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.total });
+        const rateCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.rate });
+
+        const oldQtyCell = worksheet[qtyCellRef];
+        const oldTotalCell = worksheet[totalCellRef];
+        const rateCell = worksheet[rateCellRef];
+
+        const oldQty = oldQtyCell ? (oldQtyCell.v ?? oldQtyCell.value) : null;
+        const oldTotal = oldTotalCell ? (oldTotalCell.v ?? oldTotalCell.value ?? 0) : 0;
+        const rate = rateCell ? (rateCell.v ?? rateCell.value ?? 0) : 0;
+        const newTotal = newQty * rate;
+
+        worksheet[qtyCellRef] = { ...oldQtyCell, v: newQty, value: newQty, t: 'n', w: String(newQty) };
+        worksheet[totalCellRef] = {
+          ...oldTotalCell,
+          v: newTotal,
+          value: newTotal,
+          t: 'n',
+          w: String(Number.isFinite(newTotal) ? newTotal.toFixed(2) : newTotal)
+        };
+
+        filledRows.push({
+          sheet: sheet.name,
+          row: item.row,
+          oldQty: oldQty !== null ? Number(oldQty) : null,
+          newQty,
+          oldTotal: Number(oldTotal),
+          newTotal
+        });
+      }
     }
   }
 
@@ -138,40 +200,7 @@ export class QTYFiller {
       this.addAnalyzeSheet(workbook, transactions);
     }
 
-    for (const sheet of templateStructure.sheets) {
-      if (sheet.type !== 'invoice') continue;
-      const worksheet = workbook.Sheets[sheet.name];
-      if (!worksheet) {
-        errors.push(`Sheet not found: ${sheet.name}`);
-        continue;
-      }
-
-      for (const item of sheet.lineItems) {
-        const key = this.getLineItemKey(item);
-        const newQty = quantities.get(key);
-        if (newQty === undefined) continue;
-
-        const { columns } = templateStructure;
-        const qtyCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.qty });
-        const totalCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.total });
-        const rateCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.rate });
-
-        const oldQtyCell = worksheet[qtyCellRef];
-        const oldTotalCell = worksheet[totalCellRef];
-        const rateCell = worksheet[rateCellRef];
-
-        // Use nullish coalescing (??) to properly handle values like 0
-        const oldQty = oldQtyCell ? (oldQtyCell.v ?? oldQtyCell.value) : null;
-        const oldTotal = oldTotalCell ? (oldTotalCell.v ?? oldTotalCell.value ?? 0) : 0;
-        const rate = rateCell ? (rateCell.v ?? rateCell.value ?? 0) : 0;
-        const newTotal = newQty * rate;
-
-        worksheet[qtyCellRef] = { ...oldQtyCell, v: newQty, value: newQty, t: 'n', w: String(newQty) };
-        worksheet[totalCellRef] = { ...oldTotalCell, v: newTotal, value: newTotal, t: 'n', w: String(newTotal.toFixed(2)) };
-
-        filledRows.push({ sheet: sheet.name, row: item.row, oldQty: oldQty !== null ? Number(oldQty) : null, newQty, oldTotal: Number(oldTotal), newTotal });
-      }
-    }
+    this.fillInvoiceSheets(workbook, templateStructure, quantities, filledRows, errors);
 
     XLSX.writeFile(workbook, outputPath);
     return { success: errors.length === 0, filePath: outputPath, filledRows, errors };
