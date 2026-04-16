@@ -116,6 +116,58 @@ export function UserDashboard() {
     setError(null);
   };
 
+  const handleDownloadTotal = () => {
+    if (!preview || !selectedPricelist || !startDate || !endDate) return;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const res = await fetch('http://localhost:3001/api/generate/export-total', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pricelist_id: Number(selectedPricelist),
+            start_date: startDate,
+            end_date: endDate
+          })
+        });
+
+        if (!res.ok) {
+          let msg = 'Failed to export total. Please try again.';
+          try {
+            const data = await res.json();
+            if (data?.error) msg = String(data.error);
+          } catch {
+            // ignore
+          }
+          throw new Error(msg);
+        }
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+
+        const cd = res.headers.get('content-disposition') || '';
+        const match = cd.match(/filename="?([^";]+)"?/i);
+        a.download = match?.[1] || 'Total.xlsx';
+
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -295,6 +347,12 @@ export function UserDashboard() {
             </button>
           </div>
 
+          {error && (
+            <div className="bg-red-50 text-red-700 p-3 rounded-lg">
+              {error}
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-4 text-center">
             <div className="bg-blue-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-blue-700">
@@ -370,6 +428,14 @@ export function UserDashboard() {
               className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
             >
               {loading ? 'Generating...' : 'Generate Invoice'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadTotal}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 disabled:opacity-50"
+            >
+              Download Total
             </button>
             <button
               onClick={handleReset}
