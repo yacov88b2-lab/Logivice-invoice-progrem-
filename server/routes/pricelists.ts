@@ -173,13 +173,9 @@ router.delete('/:id', (req, res) => {
       res.status(500).json({ error: 'Failed to delete pricelist' });
     }
   } catch (error) {
-<<<<<<< Updated upstream
     console.error('Error deleting pricelist:', error);
-    res.status(500).json({ error: 'Failed to delete pricelist', details: (error as Error).message });
-=======
     const err = error instanceof Error ? error : new Error(String(error));
     res.status(500).json({ error: `Failed to delete pricelist. Details: ${err.message}` });
->>>>>>> Stashed changes
   }
 });
 
