@@ -332,15 +332,23 @@ export class TableauAPIClient {
                        row['Day of Created At (Stats)'] ||
                        row['Month of Created At'] ||
                        row['Month of Created At (Orders)'] ||
+                       row['Weeks'] || // Storage view week format
+                       row['Week'] ||
                        row['Inbound at'] || // Afimilk NZ Inbound view
                        row['Shipped out'] || // Afimilk NZ Outbound view
                        row['Inbound At'] ||
                        row['shipped_out'];
       
-      if (!dateValue) return true; // Keep rows without dates (can't filter)
+      if (!dateValue) {
+        console.log('[Tableau] No date value found in row, keeping row. Available keys:', Object.keys(row).join(', '));
+        return true; // Keep rows without dates (can't filter)
+      }
       
       const rowDate = this.parseDateValue(dateValue);
-      if (!rowDate || isNaN(rowDate.getTime())) return true; // Keep rows with invalid dates
+      if (!rowDate || isNaN(rowDate.getTime())) {
+        console.log('[Tableau] Could not parse date value:', dateValue, 'keeping row');
+        return true; // Keep rows with invalid dates
+      }
       
       return rowDate >= start && rowDate <= end;
     });
@@ -382,6 +390,29 @@ export class TableauAPIClient {
     const usMatch = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
     if (usMatch) {
       return new Date(parseInt(usMatch[3]), parseInt(usMatch[1]) - 1, parseInt(usMatch[2]));
+    }
+    
+    // Try "Week 9 2026" format (Tableau Storage view)
+    const weekMatch = str.match(/week\s+(\d+)\s+(\d{4})/i);
+    if (weekMatch) {
+      const week = parseInt(weekMatch[1]);
+      const year = parseInt(weekMatch[2]);
+      // Approximate: Week 1 = Jan 1, each week adds 7 days
+      const date = new Date(year, 0, 1);
+      date.setDate(date.getDate() + (week - 1) * 7);
+      return date;
+    }
+    
+    // Try "March 2026" format (month year only - assume 1st day)
+    const monthYearMatch = str.match(/([A-Za-z]+)\s+(\d{4})/);
+    if (monthYearMatch) {
+      const monthNames = ['january', 'february', 'march', 'april', 'may', 'june',
+                          'july', 'august', 'september', 'october', 'november', 'december'];
+      const month = monthNames.indexOf(monthYearMatch[1].toLowerCase());
+      const year = parseInt(monthYearMatch[2]);
+      if (month >= 0) {
+        return new Date(year, month, 1);
+      }
     }
     
     return null;

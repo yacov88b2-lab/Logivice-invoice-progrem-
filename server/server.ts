@@ -5,6 +5,7 @@ import path from 'path';
 import { initDatabase } from './db';
 import pricelistsRouter from './routes/pricelists';
 import generateRouter from './routes/api/generate';
+import tableauRouter from './routes/tableau';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,6 +34,7 @@ app.get('/', (req, res) => {
 // Routes
 app.use('/api/pricelists', pricelistsRouter);
 app.use('/api/generate', generateRouter);
+app.use('/api/tableau', tableauRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

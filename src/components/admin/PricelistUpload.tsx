@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from "../../api";
 import type { Pricelist } from '../../types';
 
@@ -16,14 +16,55 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [customers, setCustomers] = useState<string[]>([]);
+  const [warehouses, setWarehouses] = useState<string[]>([]);
 
   const isEditing = !!pricelist;
+
+  const sortedCustomers = useMemo(() => {
+    return Array.from(new Set(customers)).sort((a, b) => a.localeCompare(b));
+  }, [customers]);
+
+  const sortedWarehouses = useMemo(() => {
+    return Array.from(new Set(warehouses)).sort((a, b) => a.localeCompare(b));
+  }, [warehouses]);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        setOptionsLoading(true);
+        const data = await api.getTableauOptions();
+        if (!mounted) return;
+        setCustomers(data.customers || []);
+        setWarehouses(data.warehouses || []);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        if (!mounted) return;
+        setError(err.message);
+      } finally {
+        if (mounted) setOptionsLoading(false);
+      }
+    };
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.name || !formData.customer_name || !formData.warehouse_code) {
       setError('Please fill in all required fields');
+      return;
+    }
+
+    const escapedCustomer = formData.customer_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameRegex = new RegExp(`^${escapedCustomer}\\s*[–-]\\s*Template\\s+\\d{4}$`);
+    if (!nameRegex.test(formData.name.trim())) {
+      setError('Pricelist Name must be in format: Customer name – Template YYYY');
       return;
     }
 
@@ -75,7 +116,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="e.g., AudioCodes CZ Warehouse"
+            placeholder="e.g., Afimilk – Template 2026"
           />
         </div>
 
@@ -84,26 +125,70 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Customer Name *
             </label>
-            <input
-              type="text"
-              value={formData.customer_name}
-              onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., AudioCodes"
-            />
+            <div className="flex gap-2">
+              <select
+                value={formData.customer_name}
+                onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                disabled={optionsLoading || loading}
+              >
+                <option value="">Select customer...</option>
+                {sortedCustomers.map(c => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  const v = prompt('Add Customer Name');
+                  const value = String(v || '').trim();
+                  if (!value) return;
+                  setCustomers(prev => (prev.includes(value) ? prev : [...prev, value]));
+                  setFormData(prev => ({ ...prev, customer_name: value }));
+                }}
+                disabled={loading}
+                className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              >
+                Add
+              </button>
+            </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Warehouse Code *
             </label>
-            <input
-              type="text"
-              value={formData.warehouse_code}
-              onChange={(e) => setFormData({ ...formData, warehouse_code: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., CZ"
-            />
+            <div className="flex gap-2">
+              <select
+                value={formData.warehouse_code}
+                onChange={(e) => setFormData({ ...formData, warehouse_code: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                disabled={optionsLoading || loading}
+              >
+                <option value="">Select warehouse...</option>
+                {sortedWarehouses.map(w => (
+                  <option key={w} value={w}>
+                    {w}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  const v = prompt('Add Warehouse Code');
+                  const value = String(v || '').trim();
+                  if (!value) return;
+                  setWarehouses(prev => (prev.includes(value) ? prev : [...prev, value]));
+                  setFormData(prev => ({ ...prev, warehouse_code: value }));
+                }}
+                disabled={loading}
+                className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              >
+                Add
+              </button>
+            </div>
           </div>
         </div>
 

@@ -22,11 +22,24 @@ A universal Excel processing application for logistics billing. Administrators u
 
 ### Installation
 
+Run commands from the project root (the folder that contains `package.json`).
+
 ```bash
 npm install
 ```
 
+If you get a PowerShell error like `npm.ps1 cannot be loaded because running scripts is disabled`:
+
+- **Option 1 (recommended)**: run `npm install` from **Command Prompt (cmd)** instead of PowerShell.
+- **Option 2**: in PowerShell run:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
 ### Run Development Server
+
+Run:
 
 ```bash
 npm run dev
@@ -50,9 +63,9 @@ npm run build
 1. Go to **Admin** tab
 2. Click **Upload New Pricelist**
 3. Enter:
-   - Pricelist Name (e.g., "AudioCodes CZ Warehouse")
-   - Customer Name (e.g., "AudioCodes")
-   - Warehouse Code (e.g., "CZ")
+   - Pricelist Name (format: `Customer name – Template YYYY`, e.g. `Afimilk – Template 2026`)
+   - Customer Name (select from dropdown)
+   - Warehouse Code (select from dropdown)
 4. Upload Excel template file
 5. System auto-analyzes structure
 
@@ -93,15 +106,29 @@ Header row is auto-detected by looking for "Rate", "QTY", "Total" keywords.
 - `POST /api/generate/preview` - Preview mapping (dry run)
 - `POST /api/generate/invoice` - Generate invoice
 - `GET /api/generate/download/:auditId` - Download generated file
+- `GET /api/tableau/options` - Customer/Warehouse option lists (used for admin dropdowns)
 
 ## Tableau API Configuration
 
-The app is configured with the provided token:
-- Base URL: `https://dub01.online.tableau.com`
-- Site: `logivice`
-- Token: `Windsurff`
+Configure Tableau credentials via environment variables (see `.env`).
 
-For development, mock transaction data is used. In production, implement actual Tableau REST API calls in `server/services/tableauAPI.ts`.
+- Base URL: e.g. `https://dub01.online.tableau.com`
+- Site: e.g. `logivice`
+- Token name/value: stored in `.env` (do not commit tokens)
+
+For development, mock transaction data may be used. In production, implement actual Tableau REST API calls in `server/services/tableauAPI.ts`.
+
+## Afimilk Excel Generation Notes
+
+Afimilk invoice generation uses an OpenXML patch approach (zip-level edits) to preserve the uploaded pricelist template sheets exactly.
+
+- The Storage sheet is renamed to `Storage MM YYYY` and filled in columns B-E.
+- Two sheets are ensured in the output file: `Management` and `Analyze`.
+- Dependencies used by this path include `jszip` and `fast-xml-parser`.
+
+## Admin Pricelist Management Notes
+
+- Deleting a pricelist shows a confirmation prompt before the delete is performed.
 
 ## Architecture
 
