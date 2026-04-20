@@ -245,6 +245,10 @@ router.post('/invoice', async (req, res) => {
           rawViewData // Pass raw Tableau view data for exact column matching
         );
 
+    const billingPeriod = isAfimilkBilling
+      ? QTYFiller.extractAfimilkStoragePeriod(rawViewData?.get('Storage') ?? [])
+      : null;
+
     // Log audit entry
     const auditEntry = AuditLogModel.create({
       pricelist_id: parseInt(pricelist_id),
@@ -296,6 +300,7 @@ router.post('/invoice', async (req, res) => {
       })),
       filledRows: fillResult.filledRows,
       errors: fillResult.errors,
+      billingPeriod,
       auditLogId: auditEntry.id,
       downloadUrl: `/api/generate/download/${auditEntry.id}`
     });

@@ -104,9 +104,45 @@ export function UserDashboard() {
   };
 
   const handleDownload = () => {
-    if (result?.auditLogId) {
-      window.open(api.downloadInvoice(result.auditLogId), '_blank');
-    }
+    if (!result?.auditLogId) return;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const pad2 = (n: number) => String(n).padStart(2, '0');
+        const now = new Date();
+        const localStamp = `${pad2(now.getDate())}-${pad2(now.getMonth() + 1)}-${now.getFullYear()} ${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
+
+        const customer = String(result?.pricelist?.customer || selectedCustomer || 'Customer').trim();
+        const mm = result?.billingPeriod?.mm;
+        const yyyy = result?.billingPeriod?.yyyy;
+        const period = mm && yyyy ? `${mm}-${yyyy}` : '';
+        const periodPart = period ? ` ${period}` : '';
+
+        const filename = `${customer}${periodPart} ${localStamp}.xlsx`;
+
+        const res = await fetch(api.downloadInvoice(result.auditLogId));
+        if (!res.ok) throw new Error('Failed to download invoice');
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
   };
 
   const handleReset = () => {
@@ -543,12 +579,23 @@ export function UserDashboard() {
             </div>
           )}
 
-          <button
-            onClick={handleDownload}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Download Invoice Excel
-          </button>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadTotal}
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 disabled:opacity-50"
+            >
+              Download Total
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              Download Invoice Excel
+            </button>
+          </div>
         </div>
       )}
     </div>
