@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import * as XLSX from 'xlsx';
 import { PricelistModel } from '../../models/Pricelist';
 import { AuditLogModel } from '../../models/AuditLog';
 import { TableauAPIClient } from '../../services/tableauAPI';
@@ -9,6 +10,118 @@ import { DataMapper } from '../../services/dataMapper';
 import { QTYFiller } from '../../services/qtyFiller';
 
 const router = express.Router();
+
+// Export matched/unmatched + raw Tableau sheets as a single Excel file
+router.post('/export-total', async (req, res) => {
+  try {
+    const { pricelist_id, start_date, end_date } = req.body;
+
+    if (!pricelist_id || !start_date || !end_date) {
+      return res.status(400).json({
+        error: 'Missing required fields: pricelist_id, start_date, end_date'
+      });
+    }
+
+    const pricelist = PricelistModel.getById(parseInt(pricelist_id));
+    if (!pricelist) {
+      return res.status(404).json({ error: 'Pricelist not found' });
+    }
+
+    if (!fs.existsSync(pricelist.file_path)) {
+      return res.status(404).json({ error: 'Pricelist file not found' });
+    }
+
+    const pricelistBuffer = fs.readFileSync(pricelist.file_path);
+
+    const tableauClient = new TableauAPIClient();
+    const { transactions, rawViewData } = await tableauClient.fetchTransactionsWithRawData(
+      start_date,
+      end_date,
+      pricelist.customer_name,
+      pricelist.warehouse_code
+    );
+
+    const { matches, unmatched } = DataMapper.mapTransactions(
+      transactions,
+      pricelist.template_structure,
+      pricelistBuffer
+    );
+
+    const matchedRows = (matches || []).map((m: any) => ({
+      status: 'Matched',
+      transactionId: m.transaction?.id ?? '',
+      date: m.transaction?.date ?? '',
+      orderNumber: m.transaction?.orderNumber ?? '',
+      segment: m.transaction?.segment ?? '',
+      movementType: m.transaction?.movementType ?? '',
+      category: m.transaction?.category ?? '',
+      unitOfMeasure: m.transaction?.unitOfMeasure ?? '',
+      description: m.transaction?.description ?? '',
+      quantity: m.transaction?.quantity ?? '',
+      sheet: m.sheetName ?? '',
+      row: m.lineItem?.row ?? '',
+      clause: m.lineItem?.clause ?? '',
+      remark: m.lineItem?.remark ?? '',
+      rate: m.lineItem?.rate ?? '',
+      confidence: m.confidence ?? '',
+      reason: m.matchReason ?? ''
+    }));
+
+    const unmatchedRows = (unmatched || []).map((u: any) => ({
+      status: 'Unmatched',
+      transactionId: u.transaction?.id ?? '',
+      date: u.transaction?.date ?? '',
+      orderNumber: u.transaction?.orderNumber ?? '',
+      segment: u.transaction?.segment ?? '',
+      movementType: u.transaction?.movementType ?? '',
+      category: u.transaction?.category ?? '',
+      unitOfMeasure: u.transaction?.unitOfMeasure ?? '',
+      description: u.transaction?.description ?? '',
+      quantity: u.transaction?.quantity ?? '',
+      sheet: '',
+      row: '',
+      clause: '',
+      remark: '',
+      rate: '',
+      confidence: '',
+      reason: u.reason ?? ''
+    }));
+
+    const allRows = [...matchedRows, ...unmatchedRows];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allRows), 'Transactions');
+
+    // Add raw Tableau view sheets (each view name must be <= 31 chars in Excel)
+    for (const [viewName, rows] of rawViewData.entries()) {
+      const safeSheetName = String(viewName || 'Raw')
+        .replace(/[\\/?*\[\]:]/g, '_')
+        .slice(0, 31);
+
+      const normalizedRows = Array.isArray(rows)
+        ? rows.map((r: any) => (r && typeof r === 'object' ? r : { value: r }))
+        : [];
+
+      const ws = XLSX.utils.json_to_sheet(normalizedRows);
+      XLSX.utils.book_append_sheet(wb, ws, safeSheetName || 'Raw');
+    }
+
+    const safeCustomer = String(pricelist.customer_name || 'Customer').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
+    const filename = `${safeCustomer}_Total_Transactions.xlsx`;
+
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (error) {
+    console.error('Error exporting total:', error);
+    res.status(500).json({ error: 'Failed to export total', details: (error as Error).message });
+  }
+});
 
 // Generate invoice from pricelist + API data or Excel file data
 router.post('/invoice', async (req, res) => {
@@ -115,7 +228,14 @@ router.post('/invoice', async (req, res) => {
 
     // Fill QTY and generate invoice
     const fillResult = isAfimilkBilling
-      ? await QTYFiller.fillAfimilkPreserveTemplate(pricelistBuffer, outputPath, transactions, rawViewData)
+      ? await QTYFiller.fillAfimilkPreserveTemplate(
+          pricelistBuffer,
+          outputPath,
+          pricelist.template_structure,
+          quantityMap,
+          transactions,
+          rawViewData
+        )
       : QTYFiller.fill(
           pricelistBuffer,
           pricelist.template_structure,
@@ -124,6 +244,10 @@ router.post('/invoice', async (req, res) => {
           transactions,
           rawViewData // Pass raw Tableau view data for exact column matching
         );
+
+    const billingPeriod = isAfimilkBilling
+      ? QTYFiller.extractAfimilkStoragePeriod(rawViewData?.get('Storage') ?? [])
+      : null;
 
     // Log audit entry
     const auditEntry = AuditLogModel.create({
@@ -176,6 +300,7 @@ router.post('/invoice', async (req, res) => {
       })),
       filledRows: fillResult.filledRows,
       errors: fillResult.errors,
+      billingPeriod,
       auditLogId: auditEntry.id,
       downloadUrl: `/api/generate/download/${auditEntry.id}`
     });

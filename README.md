@@ -76,8 +76,14 @@ npm run build
 3. Choose date range (billing period)
 4. Click **Preview Mapping** to review matches
 5. Review matched/unmatched transactions
-6. Click **Generate Invoice**
-7. Download updated Excel file
+6. (Optional) Click **Download Total** to export all matched+unmatched transactions to Excel
+7. Click **Generate Invoice**
+8. Download updated Excel file
+
+### Matched vs Unmatched (what is it matched to?)
+
+- **Matched transaction**: a transaction row from Tableau that the system can map to a specific line-item in the uploaded pricelist template (a specific sheet+row). The quantity from the transaction contributes to the invoice QTY/Total for that line-item.
+- **Unmatched transaction**: a transaction row from Tableau that cannot be mapped to any line-item in the uploaded pricelist template, so the system cannot decide where to place it in the invoice. These rows are exported so you can update the template or adjust mapping rules.
 
 ## Excel Template Structure
 
@@ -105,6 +111,7 @@ Header row is auto-detected by looking for "Rate", "QTY", "Total" keywords.
 - `DELETE /api/pricelists/:id` - Delete pricelist
 - `POST /api/generate/preview` - Preview mapping (dry run)
 - `POST /api/generate/invoice` - Generate invoice
+- `POST /api/generate/export-total` - Export total transactions (matched + unmatched) to Excel
 - `GET /api/generate/download/:auditId` - Download generated file
 - `GET /api/tableau/options` - Customer/Warehouse option lists (used for admin dropdowns)
 
@@ -116,7 +123,15 @@ Configure Tableau credentials via environment variables (see `.env`).
 - Site: e.g. `logivice`
 - Token name/value: stored in `.env` (do not commit tokens)
 
-For development, mock transaction data may be used. In production, implement actual Tableau REST API calls in `server/services/tableauAPI.ts`.
+For development, if Tableau cannot be reached, the server may fall back to mock transactions so that invoice generation can still be exercised.
+
+### Afimilk New Zealand Tableau path
+
+When the selected customer is **Afimilk New Zealand**, the backend resolves it to the Tableau customer project **Afimilk** under:
+
+`Explore / Billing / Billing 2025 / Afimilk`
+
+Workbook discovery also normalizes the customer name so workbooks such as `afimilk NZ billing` can be found even if the UI customer display name is `Afimilk New Zealand`.
 
 ## Afimilk Excel Generation Notes
 
@@ -175,6 +190,16 @@ The app handles these error cases:
 - **Missing files**: Pricelist file not found
 - **API errors**: Tableau API connection issues
 - **Invalid data**: Negative quantities, missing dates
+
+## Download Total Export
+
+The **Download Total** button exports an Excel file containing all transactions for the selected date range.
+
+- **Single sheet**: `Transactions` (contains both matched and unmatched rows)
+- **Status column**: `Matched` / `Unmatched`
+- **Filename**: generated on the user's computer (local time) in the format:
+
+`Customer name Total transaction matched and unmatched DD-MM-YYYY HH-MM.xlsx`
 
 ## License
 

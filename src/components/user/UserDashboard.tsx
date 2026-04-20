@@ -104,9 +104,45 @@ export function UserDashboard() {
   };
 
   const handleDownload = () => {
-    if (result?.auditLogId) {
-      window.open(api.downloadInvoice(result.auditLogId), '_blank');
-    }
+    if (!result?.auditLogId) return;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const pad2 = (n: number) => String(n).padStart(2, '0');
+        const now = new Date();
+        const localStamp = `${pad2(now.getDate())}-${pad2(now.getMonth() + 1)}-${now.getFullYear()} ${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
+
+        const customer = String(result?.pricelist?.customer || selectedCustomer || 'Customer').trim();
+        const mm = result?.billingPeriod?.mm;
+        const yyyy = result?.billingPeriod?.yyyy;
+        const period = mm && yyyy ? `${mm}-${yyyy}` : '';
+        const periodPart = period ? ` ${period}` : '';
+
+        const filename = `${customer}${periodPart} ${localStamp}.xlsx`;
+
+        const res = await fetch(api.downloadInvoice(result.auditLogId));
+        if (!res.ok) throw new Error('Failed to download invoice');
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
   };
 
   const handleReset = () => {
@@ -114,6 +150,62 @@ export function UserDashboard() {
     setPreview(null);
     setResult(null);
     setError(null);
+  };
+
+  const handleDownloadTotal = () => {
+    if (!preview || !selectedPricelist || !startDate || !endDate) return;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const pad2 = (n: number) => String(n).padStart(2, '0');
+        const now = new Date();
+        const timestamp = `${pad2(now.getDate())}-${pad2(now.getMonth() + 1)}-${now.getFullYear()} ${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
+        const safeCustomer = String(selectedCustomer || preview?.pricelist?.name || 'Customer').trim();
+        const downloadName = `${safeCustomer} Total transaction matched and unmatched ${timestamp}.xlsx`;
+
+        const res = await fetch('http://localhost:3001/api/generate/export-total', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pricelist_id: Number(selectedPricelist),
+            start_date: startDate,
+            end_date: endDate
+          })
+        });
+
+        if (!res.ok) {
+          let msg = 'Failed to export total. Please try again.';
+          try {
+            const data = await res.json();
+            if (data?.error) msg = String(data.error);
+          } catch {
+            // ignore
+          }
+          throw new Error(msg);
+        }
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+
+        a.download = downloadName;
+
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
   };
 
   return (
@@ -295,6 +387,12 @@ export function UserDashboard() {
             </button>
           </div>
 
+          {error && (
+            <div className="bg-red-50 text-red-700 p-3 rounded-lg">
+              {error}
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-4 text-center">
             <div className="bg-blue-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-blue-700">
@@ -370,6 +468,14 @@ export function UserDashboard() {
               className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
             >
               {loading ? 'Generating...' : 'Generate Invoice'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadTotal}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 disabled:opacity-50"
+            >
+              Download Total
             </button>
             <button
               onClick={handleReset}
@@ -473,12 +579,23 @@ export function UserDashboard() {
             </div>
           )}
 
-          <button
-            onClick={handleDownload}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Download Invoice Excel
-          </button>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadTotal}
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 disabled:opacity-50"
+            >
+              Download Total
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              Download Invoice Excel
+            </button>
+          </div>
         </div>
       )}
     </div>

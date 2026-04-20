@@ -20,9 +20,278 @@ export interface FillResult {
 }
 
 export class QTYFiller {
+  static extractAfimilkStoragePeriod(storageData: any[]): { mm: string; yyyy: string } | null {
+    const parsed = this.buildAfimilkStorageEntries(storageData);
+    if (!parsed.length) return null;
+    const mm = String(parsed[0].date.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(parsed[0].date.getFullYear());
+    return { mm, yyyy };
+  }
+
+  private static getFieldValue(row: any, fieldName: string): any {
+    if (!row || !fieldName) return undefined;
+    if (Object.prototype.hasOwnProperty.call(row, fieldName)) return row[fieldName];
+    const target = String(fieldName).toLowerCase().trim();
+    const key = Object.keys(row).find(k => String(k).toLowerCase().trim() === target);
+    return key ? row[key] : undefined;
+  }
+
+  private static parseTableauDate(value: any): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      if (value > 20000 && value < 80000) {
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+        const d = new Date(excelEpoch.getTime() + value * 24 * 60 * 60 * 1000);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (value > 1000000000000) {
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (value > 1000000000) {
+        const d = new Date(value * 1000);
+        return isNaN(d.getTime()) ? null : d;
+      }
+    }
+
+    const s = String(value).trim();
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+.*)?$/);
+    if (m) {
+      const dd = Number(m[1]);
+      const mm = Number(m[2]);
+      const yyyy = Number(m[3]);
+      if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
+        const d = new Date(yyyy, mm - 1, dd);
+        return isNaN(d.getTime()) ? null : d;
+      }
+    }
+
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  private static extractPeriodFromRows(rows: any[], dateField: string): { mm: string; yyyy: string } | null {
+    for (const r of rows || []) {
+      const raw = this.getFieldValue(r, dateField);
+      const dt = this.parseTableauDate(raw);
+      if (!dt) continue;
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const yyyy = String(dt.getFullYear());
+      return { mm, yyyy };
+    }
+    return null;
+  }
+
+  private static patchScansInboundWorksheetXml(
+    worksheetObj: any,
+    sharedStrings: string[],
+    inboundRows: any[]
+  ): void {
+    const sheetData = worksheetObj?.worksheet?.sheetData;
+    const rows: any[] = this.forceArray(sheetData?.row);
+
+    const getCellText = (cell: any): string => {
+      if (!cell) return '';
+      const t = String(cell['@_t'] ?? '');
+      if (t === 's') {
+        const idx = Number(cell.v ?? -1);
+        return idx >= 0 && idx < sharedStrings.length ? String(sharedStrings[idx]) : '';
+      }
+      if (t === 'inlineStr') {
+        const tt = cell.is?.t;
+        if (typeof tt === 'string') return tt;
+        if (typeof tt?.['#text'] === 'string') return tt['#text'];
+        return '';
+      }
+      if (cell.v !== undefined && cell.v !== null) return String(cell.v);
+      return '';
+    };
+
+    const findCell = (row: any, colLetter: string): any | null => {
+      const cells = this.forceArray(row?.c);
+      const c = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase().startsWith(colLetter.toUpperCase()));
+      return c ?? null;
+    };
+
+    const getOrCreateCell = (row: any, colLetter: string, rowNum: number): any => {
+      if (!row.c) row.c = [];
+      const cells = this.forceArray(row.c);
+      let cell = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase() === `${colLetter.toUpperCase()}${rowNum}`);
+      if (!cell) {
+        cell = { '@_r': `${colLetter.toUpperCase()}${rowNum}` };
+        cells.push(cell);
+        row.c = cells;
+      }
+      return cell;
+    };
+
+    const setInlineString = (cell: any, text: string): void => {
+      delete cell.v;
+      cell['@_t'] = 'inlineStr';
+      cell.is = { t: { '#text': text } };
+    };
+
+    let headerRowIdx = -1;
+    for (let i = 0; i < Math.min(rows.length, 200); i++) {
+      const r = rows[i];
+      const bCell = findCell(r, 'B');
+      const text = getCellText(bCell).toLowerCase().trim();
+      if (text === 'sub inventory') {
+        headerRowIdx = i;
+        break;
+      }
+    }
+    if (headerRowIdx === -1) return;
+
+    const formatDDMMYYYY = (d: Date): string => {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = String(d.getFullYear());
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    const getField = (row: any, key: string): string => {
+      const v = this.getFieldValue(row, key);
+      return v === undefined || v === null ? '' : String(v);
+    };
+
+    for (let idx = 0; idx < inboundRows.length; idx++) {
+      const templateRow = rows[headerRowIdx + 1 + idx];
+      if (!templateRow) break;
+      const rowNum = Number(templateRow['@_r'] ?? headerRowIdx + 2 + idx);
+
+      const bCell = getOrCreateCell(templateRow, 'B', rowNum);
+      const cCell = getOrCreateCell(templateRow, 'C', rowNum);
+      const dCell = getOrCreateCell(templateRow, 'D', rowNum);
+      const eCell = getOrCreateCell(templateRow, 'E', rowNum);
+      const fCell = getOrCreateCell(templateRow, 'F', rowNum);
+
+      const data = inboundRows[idx] ?? {};
+      setInlineString(bCell, getField(data, 'Sub Inventory'));
+      setInlineString(cCell, getField(data, 'Name (Service Levels)'));
+      setInlineString(dCell, getField(data, 'Ref (Orders)'));
+
+      const inboundAtRaw = this.getFieldValue(data, 'Inbound at');
+      const dt = this.parseTableauDate(inboundAtRaw);
+      setInlineString(eCell, dt ? formatDDMMYYYY(dt) : getField(data, 'Inbound at'));
+
+      setInlineString(fCell, getField(data, 'Item'));
+    }
+  }
+
+  private static patchScansOutboundWorksheetXml(
+    worksheetObj: any,
+    sharedStrings: string[],
+    outboundRows: any[]
+  ): void {
+    const sheetData = worksheetObj?.worksheet?.sheetData;
+    const rows: any[] = this.forceArray(sheetData?.row);
+
+    const getCellText = (cell: any): string => {
+      if (!cell) return '';
+      const t = String(cell['@_t'] ?? '');
+      if (t === 's') {
+        const idx = Number(cell.v ?? -1);
+        return idx >= 0 && idx < sharedStrings.length ? String(sharedStrings[idx]) : '';
+      }
+      if (t === 'inlineStr') {
+        const tt = cell.is?.t;
+        if (typeof tt === 'string') return tt;
+        if (typeof tt?.['#text'] === 'string') return tt['#text'];
+        return '';
+      }
+      if (cell.v !== undefined && cell.v !== null) return String(cell.v);
+      return '';
+    };
+
+    const findCell = (row: any, colLetter: string): any | null => {
+      const cells = this.forceArray(row?.c);
+      const c = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase().startsWith(colLetter.toUpperCase()));
+      return c ?? null;
+    };
+
+    const getOrCreateCell = (row: any, colLetter: string, rowNum: number): any => {
+      if (!row.c) row.c = [];
+      const cells = this.forceArray(row.c);
+      let cell = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase() === `${colLetter.toUpperCase()}${rowNum}`);
+      if (!cell) {
+        cell = { '@_r': `${colLetter.toUpperCase()}${rowNum}` };
+        cells.push(cell);
+        row.c = cells;
+      }
+      return cell;
+    };
+
+    const setInlineString = (cell: any, text: string): void => {
+      delete cell.v;
+      cell['@_t'] = 'inlineStr';
+      cell.is = { t: { '#text': text } };
+    };
+
+    let headerRowIdx = -1;
+    for (let i = 0; i < Math.min(rows.length, 200); i++) {
+      const r = rows[i];
+      const bCell = findCell(r, 'B');
+      const text = getCellText(bCell).toLowerCase().trim();
+      if (text === 'sub inventory') {
+        headerRowIdx = i;
+        break;
+      }
+    }
+    if (headerRowIdx === -1) return;
+
+    const formatDDMMYYYY = (d: Date): string => {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = String(d.getFullYear());
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    const getField = (row: any, key: string): string => {
+      const v = this.getFieldValue(row, key);
+      return v === undefined || v === null ? '' : String(v);
+    };
+
+    for (let idx = 0; idx < outboundRows.length; idx++) {
+      const templateRow = rows[headerRowIdx + 1 + idx];
+      if (!templateRow) break;
+      const rowNum = Number(templateRow['@_r'] ?? headerRowIdx + 2 + idx);
+
+      const bCell = getOrCreateCell(templateRow, 'B', rowNum);
+      const cCell = getOrCreateCell(templateRow, 'C', rowNum);
+      const eCell = getOrCreateCell(templateRow, 'E', rowNum);
+      const fCell = getOrCreateCell(templateRow, 'F', rowNum);
+      const gCell = getOrCreateCell(templateRow, 'G', rowNum);
+
+      const data = outboundRows[idx] ?? {};
+      setInlineString(bCell, getField(data, 'Sub Inventory'));
+      setInlineString(cCell, getField(data, 'Name (Service Levels)'));
+      setInlineString(eCell, getField(data, 'Ref (Orders)'));
+
+      const shippedOutRaw = this.getFieldValue(data, 'Shipped out');
+      const dt = this.parseTableauDate(shippedOutRaw);
+      setInlineString(fCell, dt ? formatDDMMYYYY(dt) : getField(data, 'Shipped out'));
+
+      setInlineString(gCell, getField(data, 'Repacking/Labeling'));
+    }
+  }
+
+  private static findRawViewData(rawViewData: Map<string, any[]>, needle: string): any[] | null {
+    const target = needle.toLowerCase().trim();
+    for (const [k, v] of rawViewData.entries()) {
+      if (!k) continue;
+      const key = String(k).toLowerCase();
+      if (key === target || key.includes(target)) return Array.isArray(v) ? v : null;
+    }
+    return null;
+  }
+
   static async fillAfimilkPreserveTemplate(
     pricelistBuffer: Buffer,
     outputPath: string,
+    templateStructure: TemplateStructure,
+    quantities: Map<string, number>,
     transactions?: Transaction[],
     rawViewData?: Map<string, any[]>
   ): Promise<FillResult> {
@@ -42,6 +311,12 @@ export class QTYFiller {
       const wbXmlRaw = await zip.file(wbXmlPath)?.async('string');
       if (!wbXmlRaw) throw new Error('Missing xl/workbook.xml in template');
       const wbObj: any = parser.parse(wbXmlRaw);
+
+      // We patch cell values directly in OpenXML; force Excel to recalculate formulas on open
+      // so cached <v> values (e.g. summary totals) do not stay stale.
+      if (!wbObj.workbook.calcPr) wbObj.workbook.calcPr = {};
+      wbObj.workbook.calcPr['@_calcMode'] = 'auto';
+      wbObj.workbook.calcPr['@_fullCalcOnLoad'] = '1';
       const sheets: any[] = this.forceArray(wbObj?.workbook?.sheets?.sheet);
       wbObj.workbook.sheets.sheet = sheets;
       if (!sheets.length) throw new Error('No sheets found in template');
@@ -51,6 +326,7 @@ export class QTYFiller {
 
       if (storageData.length) {
         const sorted = this.buildAfimilkStorageEntries(storageData);
+        const weeklyAllTotals = this.buildAfimilkStorageWeeklyAllTotals(storageData);
         if (!sorted.length) {
           const first = storageData?.[0] ?? {};
           const keys = Object.keys(first).slice(0, 30);
@@ -73,14 +349,73 @@ export class QTYFiller {
         const storageXmlRaw = await zip.file(storageSheetPath)?.async('string');
         if (!storageXmlRaw) throw new Error(`Missing Storage worksheet XML at ${storageSheetPath}`);
         const storageObj: any = parser.parse(storageXmlRaw);
-        this.patchStorageWorksheetXml(storageObj, sharedStrings, sorted);
+        this.patchStorageWorksheetXml(storageObj, sharedStrings, sorted, weeklyAllTotals);
         zip.file(storageSheetPath, builder.build(storageObj));
 
         await this.replaceSheetNameInAllFormulas(zip, parser, builder, oldStorageName, newStorageName);
       }
 
+      const inboundData = rawViewData ? this.findRawViewData(rawViewData, 'inbound') : null;
+      if (inboundData && inboundData.length) {
+        const inboundSheetEntry = sheets.find(s => String(s['@_name'] ?? '').toLowerCase().trim().includes('scans inbound'));
+        if (inboundSheetEntry) {
+          const inboundPeriod = this.extractPeriodFromRows(inboundData, 'Inbound at');
+          const oldInboundName = String(inboundSheetEntry['@_name'] ?? 'Scans Inbound');
+          if (inboundPeriod) {
+            inboundSheetEntry['@_name'] = `Scans Inbound ${inboundPeriod.mm}-${inboundPeriod.yyyy}`;
+          }
+
+          const inboundRelId = String(inboundSheetEntry['@_r:id'] ?? '');
+          const inboundSheetPath = await this.resolveWorksheetPathFromWorkbookRel(zip, parser, inboundRelId);
+          if (inboundSheetPath) {
+            const inboundXmlRaw = await zip.file(inboundSheetPath)?.async('string');
+            if (inboundXmlRaw) {
+              const inboundObj: any = parser.parse(inboundXmlRaw);
+              this.patchScansInboundWorksheetXml(inboundObj, sharedStrings, inboundData);
+              zip.file(inboundSheetPath, builder.build(inboundObj));
+            }
+          }
+
+          const newInboundName = String(inboundSheetEntry['@_name'] ?? oldInboundName);
+          if (newInboundName !== oldInboundName) {
+            await this.replaceSheetNameInAllFormulas(zip, parser, builder, oldInboundName, newInboundName);
+          }
+        }
+      }
+
+      const outboundData = rawViewData ? this.findRawViewData(rawViewData, 'outbound') : null;
+      if (outboundData && outboundData.length) {
+        const outboundSheetEntry = sheets.find(s => String(s['@_name'] ?? '').toLowerCase().trim().includes('scans outbound'));
+        if (outboundSheetEntry) {
+          const outboundPeriod = this.extractPeriodFromRows(outboundData, 'Shipped out');
+          const oldOutboundName = String(outboundSheetEntry['@_name'] ?? 'Scans Outbound');
+          if (outboundPeriod) {
+            outboundSheetEntry['@_name'] = `Scans Outbound ${outboundPeriod.mm}-${outboundPeriod.yyyy}`;
+          }
+
+          const outboundRelId = String(outboundSheetEntry['@_r:id'] ?? '');
+          const outboundSheetPath = await this.resolveWorksheetPathFromWorkbookRel(zip, parser, outboundRelId);
+          if (outboundSheetPath) {
+            const outboundXmlRaw = await zip.file(outboundSheetPath)?.async('string');
+            if (outboundXmlRaw) {
+              const outboundObj: any = parser.parse(outboundXmlRaw);
+              this.patchScansOutboundWorksheetXml(outboundObj, sharedStrings, outboundData);
+              zip.file(outboundSheetPath, builder.build(outboundObj));
+            }
+          }
+
+          const newOutboundName = String(outboundSheetEntry['@_name'] ?? oldOutboundName);
+          if (newOutboundName !== oldOutboundName) {
+            await this.replaceSheetNameInAllFormulas(zip, parser, builder, oldOutboundName, newOutboundName);
+          }
+        }
+      }
+
       await this.addOrReplaceWorksheetOpenXml(zip, parser, builder, wbObj, 'Management', management);
       await this.addOrReplaceWorksheetOpenXml(zip, parser, builder, wbObj, 'Analyze', analyzeRows);
+
+      // Patch invoice QTY cells without rewriting the workbook (preserve styles/formulas)
+      await this.patchInvoiceQtyOpenXml(zip, parser, builder, wbObj, templateStructure, quantities, filledRows, errors);
 
       zip.file(wbXmlPath, builder.build(wbObj));
 
@@ -91,6 +426,180 @@ export class QTYFiller {
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       return { success: false, filePath: outputPath, filledRows, errors: [...errors, err.message] };
+    }
+  }
+
+  private static colIdxToLetter(idx: number): string {
+    let n = idx + 1;
+    let col = '';
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      col = String.fromCharCode(65 + rem) + col;
+      n = Math.floor((n - 1) / 26);
+    }
+    return col;
+  }
+
+  private static async patchInvoiceQtyOpenXml(
+    zip: JSZip,
+    parser: XMLParser,
+    builder: XMLBuilder,
+    wbObj: any,
+    templateStructure: TemplateStructure,
+    quantities: Map<string, number>,
+    filledRows: FillResult['filledRows'],
+    errors: string[]
+  ): Promise<void> {
+    const qtyCol = this.colIdxToLetter(templateStructure.columns.qty);
+    const rateCol = this.colIdxToLetter(templateStructure.columns.rate);
+
+    const sheets: any[] = this.forceArray(wbObj?.workbook?.sheets?.sheet);
+    wbObj.workbook.sheets.sheet = sheets;
+
+    const getOrCreateCell = (row: any, colLetter: string, rowNum: number): any => {
+      if (!row.c) row.c = [];
+      const cells = this.forceArray(row.c);
+      const ref = `${colLetter.toUpperCase()}${rowNum}`;
+      let cell = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase() === ref);
+      if (!cell) {
+        cell = { '@_r': ref };
+        cells.push(cell);
+        row.c = cells;
+      }
+      return cell;
+    };
+
+    const getCellNumber = (row: any, colLetter: string, rowNum: number): number => {
+      const cells = this.forceArray(row?.c);
+      const ref = `${colLetter.toUpperCase()}${rowNum}`;
+      const cell = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase() === ref);
+      if (!cell) return 0;
+      const raw = cell.v ?? cell.value;
+      const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').replace(/,/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    for (const sheet of templateStructure.sheets) {
+      if (sheet.type !== 'invoice') continue;
+      const sheetEntry = sheets.find(s => String(s['@_name'] ?? '') === sheet.name);
+      if (!sheetEntry) {
+        errors.push(`Sheet not found: ${sheet.name}`);
+        continue;
+      }
+
+      const relId = String(sheetEntry['@_r:id'] ?? '');
+      const sheetPath = await this.resolveWorksheetPathFromWorkbookRel(zip, parser, relId);
+      if (!sheetPath) {
+        errors.push(`Could not resolve worksheet XML path for: ${sheet.name}`);
+        continue;
+      }
+
+      const xmlRaw = await zip.file(sheetPath)?.async('string');
+      if (!xmlRaw) {
+        errors.push(`Missing worksheet XML for: ${sheet.name}`);
+        continue;
+      }
+
+      const wsObj: any = parser.parse(xmlRaw);
+      const sheetData = wsObj?.worksheet?.sheetData;
+      const rows: any[] = this.forceArray(sheetData?.row);
+      if (!sheetData) {
+        errors.push(`Missing sheetData for: ${sheet.name}`);
+        continue;
+      }
+
+      for (const item of sheet.lineItems) {
+        const key = this.getLineItemKey(item);
+        const newQty = quantities.get(key);
+        if (newQty === undefined) continue;
+
+        const rowNum = item.row;
+        let row = rows.find((r: any) => Number(r['@_r'] ?? 0) === rowNum);
+        if (!row) {
+          // If the row doesn't exist in XML, don't create it (would affect formatting). Just report.
+          errors.push(`Row not found in ${sheet.name}: ${rowNum}`);
+          continue;
+        }
+
+        const qtyCell = getOrCreateCell(row, qtyCol, rowNum);
+        const oldQtyRaw = qtyCell.v ?? qtyCell.value;
+        const oldQty = oldQtyRaw !== undefined && oldQtyRaw !== null ? Number(oldQtyRaw) : null;
+
+        // Preserve style/formula, only update value as numeric
+        delete qtyCell.is;
+        delete qtyCell['@_t'];
+        qtyCell.v = String(newQty);
+
+        const rate = getCellNumber(row, rateCol, rowNum);
+        const newTotal = newQty * rate;
+
+        filledRows.push({
+          sheet: sheet.name,
+          row: rowNum,
+          oldQty: oldQty !== null && Number.isFinite(oldQty) ? oldQty : null,
+          newQty,
+          oldTotal: 0,
+          newTotal
+        });
+      }
+
+      wsObj.worksheet.sheetData.row = rows;
+      zip.file(sheetPath, builder.build(wsObj));
+    }
+  }
+
+  private static fillInvoiceSheets(
+    workbook: XLSX.WorkBook,
+    templateStructure: TemplateStructure,
+    quantities: Map<string, number>,
+    filledRows: FillResult['filledRows'],
+    errors: string[]
+  ) {
+    for (const sheet of templateStructure.sheets) {
+      if (sheet.type !== 'invoice') continue;
+      const worksheet = workbook.Sheets[sheet.name];
+      if (!worksheet) {
+        errors.push(`Sheet not found: ${sheet.name}`);
+        continue;
+      }
+
+      for (const item of sheet.lineItems) {
+        const key = this.getLineItemKey(item);
+        const newQty = quantities.get(key);
+        if (newQty === undefined) continue;
+
+        const { columns } = templateStructure;
+        const qtyCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.qty });
+        const totalCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.total });
+        const rateCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.rate });
+
+        const oldQtyCell = worksheet[qtyCellRef];
+        const oldTotalCell = worksheet[totalCellRef];
+        const rateCell = worksheet[rateCellRef];
+
+        const oldQty = oldQtyCell ? (oldQtyCell.v ?? oldQtyCell.value) : null;
+        const oldTotal = oldTotalCell ? (oldTotalCell.v ?? oldTotalCell.value ?? 0) : 0;
+        const rate = rateCell ? (rateCell.v ?? rateCell.value ?? 0) : 0;
+        const newTotal = newQty * rate;
+
+        worksheet[qtyCellRef] = { ...oldQtyCell, v: newQty, value: newQty, t: 'n', w: String(newQty) };
+        worksheet[totalCellRef] = {
+          ...oldTotalCell,
+          v: newTotal,
+          value: newTotal,
+          t: 'n',
+          w: String(Number.isFinite(newTotal) ? newTotal.toFixed(2) : newTotal)
+        };
+
+        filledRows.push({
+          sheet: sheet.name,
+          row: item.row,
+          oldQty: oldQty !== null ? Number(oldQty) : null,
+          newQty,
+          oldTotal: Number(oldTotal),
+          newTotal
+        });
+      }
     }
   }
 
@@ -138,40 +647,7 @@ export class QTYFiller {
       this.addAnalyzeSheet(workbook, transactions);
     }
 
-    for (const sheet of templateStructure.sheets) {
-      if (sheet.type !== 'invoice') continue;
-      const worksheet = workbook.Sheets[sheet.name];
-      if (!worksheet) {
-        errors.push(`Sheet not found: ${sheet.name}`);
-        continue;
-      }
-
-      for (const item of sheet.lineItems) {
-        const key = this.getLineItemKey(item);
-        const newQty = quantities.get(key);
-        if (newQty === undefined) continue;
-
-        const { columns } = templateStructure;
-        const qtyCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.qty });
-        const totalCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.total });
-        const rateCellRef = XLSX.utils.encode_cell({ r: item.row - 1, c: columns.rate });
-
-        const oldQtyCell = worksheet[qtyCellRef];
-        const oldTotalCell = worksheet[totalCellRef];
-        const rateCell = worksheet[rateCellRef];
-
-        // Use nullish coalescing (??) to properly handle values like 0
-        const oldQty = oldQtyCell ? (oldQtyCell.v ?? oldQtyCell.value) : null;
-        const oldTotal = oldTotalCell ? (oldTotalCell.v ?? oldTotalCell.value ?? 0) : 0;
-        const rate = rateCell ? (rateCell.v ?? rateCell.value ?? 0) : 0;
-        const newTotal = newQty * rate;
-
-        worksheet[qtyCellRef] = { ...oldQtyCell, v: newQty, value: newQty, t: 'n', w: String(newQty) };
-        worksheet[totalCellRef] = { ...oldTotalCell, v: newTotal, value: newTotal, t: 'n', w: String(newTotal.toFixed(2)) };
-
-        filledRows.push({ sheet: sheet.name, row: item.row, oldQty: oldQty !== null ? Number(oldQty) : null, newQty, oldTotal: Number(oldTotal), newTotal });
-      }
-    }
+    this.fillInvoiceSheets(workbook, templateStructure, quantities, filledRows, errors);
 
     XLSX.writeFile(workbook, outputPath);
     return { success: errors.length === 0, filePath: outputPath, filledRows, errors };
@@ -235,7 +711,8 @@ export class QTYFiller {
   private static patchStorageWorksheetXml(
     worksheetObj: any,
     sharedStrings: string[],
-    sorted: Array<{ date: Date; week: string; pallet: number; shelf: number }>
+    sorted: Array<{ date: Date; week: string; warehouseName: string; pallet: number; shelf: number }>,
+    weeklyAllTotals: Map<string, { pallet?: number; shelf?: number }>
   ): void {
     const sheetData = worksheetObj?.worksheet?.sheetData;
     const rows: any[] = this.forceArray(sheetData?.row);
@@ -300,22 +777,63 @@ export class QTYFiller {
     if (headerRowIdx === -1) throw new Error('Could not find Storage header row');
 
     let dataIdx = 0;
+    let weekDayCount = 0;
+    let lastWeek = '';
+    let lastWarehouse = '';
+
     for (let i = headerRowIdx + 1; i < rows.length && dataIdx < sorted.length; i++) {
       const r = rows[i];
       const rowNum = Number(r['@_r'] ?? i + 1);
       const cCell = getOrCreateCell(r, 'C', rowNum);
       const existingStr = getCellText(cCell).toLowerCase().trim();
-      if (existingStr.includes('total')) continue;
 
-      const entry = sorted[dataIdx++];
+      // Preserve separator/total rows in the template
+      if (existingStr.includes('total')) {
+        const aCell = getOrCreateCell(r, 'A', rowNum);
+        const bCell = getOrCreateCell(r, 'B', rowNum);
+        const dCell = getOrCreateCell(r, 'D', rowNum);
+        const eCell = getOrCreateCell(r, 'E', rowNum);
+
+        const week = getCellText(bCell).trim() || lastWeek;
+        const warehouseName = getCellText(aCell).trim() || lastWarehouse;
+        const key = `${week}|${warehouseName}`;
+        const totals = weeklyAllTotals.get(key);
+        if (totals) {
+          if (typeof totals.pallet === 'number') setNumber(dCell, totals.pallet);
+          if (typeof totals.shelf === 'number') setNumber(eCell, totals.shelf);
+        }
+        continue;
+      }
+
+      const entry = sorted[dataIdx];
+      if (!entry) break;
+
+      if (entry.week !== lastWeek) {
+        lastWeek = entry.week;
+        weekDayCount = 0;
+      }
+
+      lastWarehouse = entry.warehouseName;
+
+      const aCell = getOrCreateCell(r, 'A', rowNum);
       const bCell = getOrCreateCell(r, 'B', rowNum);
       const dCell = getOrCreateCell(r, 'D', rowNum);
       const eCell = getOrCreateCell(r, 'E', rowNum);
 
+      setInlineString(aCell, entry.warehouseName);
       setInlineString(bCell, entry.week);
       setInlineString(cCell, this.formatDDMMYYYY(entry.date));
       setNumber(dCell, entry.pallet);
       setNumber(eCell, entry.shelf);
+
+      dataIdx++;
+      weekDayCount++;
+
+      // Template uses groups of 7 days followed by a yellow Total separator row.
+      // If the next row is a Total row, we will naturally skip it in the next iteration.
+      if (weekDayCount >= 7) {
+        weekDayCount = 0;
+      }
     }
   }
 
@@ -514,24 +1032,133 @@ export class QTYFiller {
     return `${dd}/${mm}/${yyyy}`;
   }
 
-  private static buildAfimilkStorageEntries(storageData: any[]): Array<{ date: Date; week: string; pallet: number; shelf: number }> {
+  private static buildAfimilkStorageEntries(
+    storageData: any[]
+  ): Array<{ date: Date; week: string; warehouseName: string; pallet: number; shelf: number }> {
     const parseDate = (value: any): Date | null => {
       if (!value) return null;
       if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+
+      // Excel/CSV sometimes gives a numeric serial or epoch-like value
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        // Heuristic: Excel serial date (days since 1899-12-30)
+        if (value > 20000 && value < 80000) {
+          const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+          const ms = excelEpoch.getTime() + value * 24 * 60 * 60 * 1000;
+          const d = new Date(ms);
+          return isNaN(d.getTime()) ? null : d;
+        }
+
+        // Epoch milliseconds
+        if (value > 1000000000000) {
+          const d = new Date(value);
+          return isNaN(d.getTime()) ? null : d;
+        }
+
+        // Epoch seconds
+        if (value > 1000000000) {
+          const d = new Date(value * 1000);
+          return isNaN(d.getTime()) ? null : d;
+        }
+      }
+
       const s = String(value).trim();
+
+      // DD/MM/YYYY or DD-MM-YYYY
       const m1 = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
       if (m1) {
-        const dd = Number(m1[1]);
-        const mm = Number(m1[2]);
+        let dd = Number(m1[1]);
+        let mm = Number(m1[2]);
         const yyyy = Number(m1[3].length === 2 ? `20${m1[3]}` : m1[3]);
+
+        // If ambiguous (both <= 12), prefer MM/DD/YYYY when it makes more sense.
+        // This prevents dropping valid US-formatted dates.
+        if (dd <= 12 && mm <= 12) {
+          // If the "month" value is > 12, swap; otherwise leave as-is.
+          // We'll also try a swap as a fallback below.
+        }
+
         const d = new Date(yyyy, mm - 1, dd);
-        return isNaN(d.getTime()) ? null : d;
+        if (!isNaN(d.getTime())) return d;
+
+        // Fallback swap (MM/DD/YYYY)
+        const swapped = new Date(yyyy, dd - 1, mm);
+        return isNaN(swapped.getTime()) ? null : swapped;
       }
+
+      // Tableau can return "1 March 2026"
+      const m2 = s.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
+      if (m2) {
+        const monthNames = [
+          'january',
+          'february',
+          'march',
+          'april',
+          'may',
+          'june',
+          'july',
+          'august',
+          'september',
+          'october',
+          'november',
+          'december'
+        ];
+        const dd = Number(m2[1]);
+        const mm = monthNames.indexOf(String(m2[2]).toLowerCase()) + 1;
+        const yyyy = Number(m2[3]);
+        if (mm >= 1) {
+          const d = new Date(yyyy, mm - 1, dd);
+          return isNaN(d.getTime()) ? null : d;
+        }
+      }
+
+      // Hebrew month names (e.g. "1 במרץ 2026")
+      const mHe = s.match(/^(\d{1,2})\s+([^\s]+)\s+(\d{4})/);
+      if (mHe) {
+        const dd = Number(mHe[1]);
+        const rawMonth = String(mHe[2]).trim();
+        const monthToken = rawMonth.startsWith('ב') ? rawMonth.slice(1) : rawMonth;
+        const yyyy = Number(mHe[3]);
+
+        const hebrewMonths: Record<string, number> = {
+          'ינואר': 1,
+          'פברואר': 2,
+          'מרץ': 3,
+          'אפריל': 4,
+          'מאי': 5,
+          'יוני': 6,
+          'יולי': 7,
+          'אוגוסט': 8,
+          'ספטמבר': 9,
+          'אוקטובר': 10,
+          'נובמבר': 11,
+          'דצמבר': 12
+        };
+
+        const mm = hebrewMonths[monthToken];
+        if (mm) {
+          const d = new Date(yyyy, mm - 1, dd);
+          return isNaN(d.getTime()) ? null : d;
+        }
+      }
+
       const d2 = new Date(s);
       return isNaN(d2.getTime()) ? null : d2;
     };
 
-    const out: Array<{ date: Date; week: string; pallet: number; shelf: number }> = [];
+    const toNumber = (v: any): number => {
+      const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    // Tableau Storage view for Afimilk often comes as rows:
+    // Day of Created At (Stats), Weeks, Name (Warehouses), Name, Value
+    // Where Name indicates Pallet/Shelf and Value is the numeric amount.
+    const grouped = new Map<
+      string,
+      { date: Date; week: string; warehouseName: string; pallet: number; shelf: number }
+    >();
+
     for (const r of storageData) {
       const date =
         parseDate(r['Day of Created At (Stats)']) ||
@@ -540,12 +1167,64 @@ export class QTYFiller {
         parseDate(r['Day']) ||
         parseDate(r['Created At']);
       if (!date) continue;
-      const week = String(r['Week'] ?? r['Week Number'] ?? r['Week of Created At'] ?? '').trim();
-      const pallet = Number(r['Pallet'] ?? r['Pallet Qty'] ?? r['Locations of type Pallet'] ?? r['Locations of type pallet'] ?? 0);
-      const shelf = Number(r['Shelf'] ?? r['Shelf Qty'] ?? r['Locations of type Shelf'] ?? r['Locations of type shelf'] ?? 0);
-      out.push({ date, week, pallet: Number.isFinite(pallet) ? pallet : 0, shelf: Number.isFinite(shelf) ? shelf : 0 });
+
+      const week = String(r['Weeks'] ?? r['Week'] ?? r['Week Number'] ?? r['Week of Created At'] ?? '').trim();
+      const warehouseName = String(r['Name (Warehouses)'] ?? r['Warehouse'] ?? 'Rohlig NZ').trim() || 'Rohlig NZ';
+
+      const key = `${date.toISOString().slice(0, 10)}|${week}|${warehouseName}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, { date, week, warehouseName, pallet: 0, shelf: 0 });
+      }
+
+      const metricName = String(r['Name'] ?? r['Metric'] ?? '').toLowerCase();
+      const value = toNumber(r['Value'] ?? r['value'] ?? r['Locations of type Pallet'] ?? r['Locations of type Shelf']);
+      const entry = grouped.get(key)!;
+
+      if (metricName.includes('pallet')) {
+        entry.pallet = value;
+      } else if (metricName.includes('shelf')) {
+        entry.shelf = value;
+      } else {
+        // If the view already provides wide columns, support that too
+        const pallet = toNumber(r['Locations of type Pallet'] ?? r['Locations of type pallet']);
+        const shelf = toNumber(r['Locations of type Shelf'] ?? r['Locations of type shelf']);
+        if (pallet) entry.pallet = pallet;
+        if (shelf) entry.shelf = shelf;
+      }
     }
+
+    const out = Array.from(grouped.values());
     out.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return out;
+  }
+
+  private static buildAfimilkStorageWeeklyAllTotals(storageData: any[]): Map<string, { pallet?: number; shelf?: number }> {
+    const toNumber = (v: any): number => {
+      const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const out = new Map<string, { pallet?: number; shelf?: number }>();
+
+    for (const r of storageData) {
+      const dayRaw = r['Day of Created At (Stats)'] ?? r['Day of Created At'] ?? r['Date'] ?? r['Day'] ?? r['Created At'];
+      const isAll = String(dayRaw ?? '').trim().toLowerCase() === 'all';
+      if (!isAll) continue;
+
+      const week = String(r['Weeks'] ?? r['Week'] ?? r['Week Number'] ?? r['Week of Created At'] ?? '').trim();
+      const warehouseName = String(r['Name (Warehouses)'] ?? r['Warehouse'] ?? 'Rohlig NZ').trim() || 'Rohlig NZ';
+      if (!week) continue;
+
+      const metricName = String(r['Name'] ?? r['Metric'] ?? '').toLowerCase();
+      const value = toNumber(r['Value'] ?? r['value'] ?? r['Locations of type Pallet'] ?? r['Locations of type Shelf']);
+      const key = `${week}|${warehouseName}`;
+      if (!out.has(key)) out.set(key, {});
+      const entry = out.get(key)!;
+
+      if (metricName.includes('pallet')) entry.pallet = value;
+      if (metricName.includes('shelf')) entry.shelf = value;
+    }
+
     return out;
   }
 

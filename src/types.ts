@@ -132,6 +132,10 @@ export interface GenerateResponse {
     newTotal: number;
   }>;
   errors: string[];
+  billingPeriod?: {
+    mm: string;
+    yyyy: string;
+  } | null;
   auditLogId: number;
   downloadUrl: string;
 }
