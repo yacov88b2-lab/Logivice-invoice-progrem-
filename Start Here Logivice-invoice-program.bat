@@ -8,6 +8,27 @@ echo ============================================
 echo Logivice Invoice Processor - Start Here
 echo ============================================
 
+set STAGING_URL=https://logivice-staging.netlify.app
+set PRODUCTION_URL=https://logivice-prod.netlify.app
+
+echo.
+echo Choose what to open:
+echo   [1] Local (dev) - http://localhost:5173
+echo   [2] Staging     - %STAGING_URL%
+echo   [3] Production  - %PRODUCTION_URL%
+echo.
+set /p TARGET_CHOICE=Enter 1, 2, or 3 then press ENTER: 
+
+if "%TARGET_CHOICE%"=="2" (
+  start "" "%STAGING_URL%"
+  exit /b 0
+)
+
+if "%TARGET_CHOICE%"=="3" (
+  start "" "%PRODUCTION_URL%"
+  exit /b 0
+)
+
 where npm >nul 2>nul
 if errorlevel 1 (
   echo.

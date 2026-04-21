@@ -1,6 +1,6 @@
 @echo off
 REM One-command push to Test-Main
-cd /d "c:\Dev - New\Windsurff invoice\invoice-processor"
+cd /d "%~dp0"
 
 echo ======================================
 echo  Push to Test-Main Automation
