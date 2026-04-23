@@ -29,6 +29,18 @@ router.get('/options', async (req, res) => {
       }
     }
 
+    // Fallback/augment customers from local DB so the UI can still work even if
+    // Tableau config/auth is missing or returns no projects.
+    const dbCustomers = (db
+      .prepare(
+        'SELECT DISTINCT customer_name as name FROM pricelists WHERE customer_name IS NOT NULL AND TRIM(customer_name) <> \'\''
+      )
+      .all() as any[])
+      .map(r => String(r.name || '').trim())
+      .filter(Boolean);
+
+    customers = customers.concat(dbCustomers);
+
     customers = Array.from(new Set(customers)).sort((a, b) => a.localeCompare(b));
 
     const warehouses = (db
