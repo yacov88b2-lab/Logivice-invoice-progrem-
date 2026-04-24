@@ -25,11 +25,14 @@ if %ERRORLEVEL% neq 0 (
   exit /b 1
 )
 
-git status --porcelain > .git-status-temp.txt
-set /p GIT_STATUS=<.git-status-temp.txt
-del .git-status-temp.txt >nul 2>nul
+set "HAS_CHANGES="
+for /f "delims=" %%A in ('git status --porcelain') do (
+  set "HAS_CHANGES=1"
+  goto :has_changes_done
+)
+:has_changes_done
 
-if not "%GIT_STATUS%"=="" (
+if defined HAS_CHANGES (
   echo.
   echo ERROR: you have uncommitted changes. Commit or stash before pushing.
   echo.
