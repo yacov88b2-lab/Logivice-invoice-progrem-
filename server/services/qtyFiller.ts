@@ -8,6 +8,7 @@ import type { TemplateStructure, LineItem, Transaction } from '../types';
 export interface FillResult {
   success: boolean;
   filePath: string;
+  suggestedFilename?: string;
   filledRows: Array<{
     sheet: string;
     row: number;
@@ -83,6 +84,27 @@ export class QTYFiller {
     return null;
   }
 
+  private static extractUniquePeriodFromRows(
+    rows: any[],
+    dateField: string
+  ): { mm: string; yyyy: string } | null {
+    let period: { mm: string; yyyy: string } | null = null;
+    for (const r of rows || []) {
+      const raw = this.getFieldValue(r, dateField);
+      const dt = this.parseTableauDate(raw);
+      if (!dt) continue;
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const yyyy = String(dt.getFullYear());
+      const p = { mm, yyyy };
+      if (!period) {
+        period = p;
+        continue;
+      }
+      if (period.mm !== p.mm || period.yyyy !== p.yyyy) return null;
+    }
+    return period;
+  }
+
   private static patchScansInboundWorksheetXml(
     worksheetObj: any,
     sharedStrings: string[],
@@ -91,39 +113,44 @@ export class QTYFiller {
     const sheetData = worksheetObj?.worksheet?.sheetData;
     const rows: any[] = this.forceArray(sheetData?.row);
 
-    const getCellText = (cell: any): string => {
-      if (!cell) return '';
-      const t = String(cell['@_t'] ?? '');
-      if (t === 's') {
-        const idx = Number(cell.v ?? -1);
-        return idx >= 0 && idx < sharedStrings.length ? String(sharedStrings[idx]) : '';
-      }
-      if (t === 'inlineStr') {
-        const tt = cell.is?.t;
-        if (typeof tt === 'string') return tt;
-        if (typeof tt?.['#text'] === 'string') return tt['#text'];
-        return '';
-      }
-      if (cell.v !== undefined && cell.v !== null) return String(cell.v);
-      return '';
+    const findRow = (rowNum: number): any | null => {
+      const r = rows.find((rr: any) => Number(rr?.['@_r'] ?? 0) === rowNum);
+      return r ?? null;
     };
 
-    const findCell = (row: any, colLetter: string): any | null => {
+    const getOrCreateRow = (rowNum: number): any => {
+      let row = findRow(rowNum);
+      if (row) return row;
+      row = { '@_r': String(rowNum), c: [] };
+      rows.push(row);
+      return row;
+    };
+
+    const getCell = (row: any, colLetter: string, rowNum: number): any | null => {
       const cells = this.forceArray(row?.c);
-      const c = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase().startsWith(colLetter.toUpperCase()));
+      const ref = `${colLetter.toUpperCase()}${rowNum}`;
+      const c = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase() === ref);
       return c ?? null;
     };
 
     const getOrCreateCell = (row: any, colLetter: string, rowNum: number): any => {
       if (!row.c) row.c = [];
       const cells = this.forceArray(row.c);
-      let cell = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase() === `${colLetter.toUpperCase()}${rowNum}`);
+      const ref = `${colLetter.toUpperCase()}${rowNum}`;
+      let cell = cells.find((cc: any) => String(cc['@_r'] ?? '').toUpperCase() === ref);
       if (!cell) {
-        cell = { '@_r': `${colLetter.toUpperCase()}${rowNum}` };
+        cell = { '@_r': ref };
         cells.push(cell);
         row.c = cells;
       }
       return cell;
+    };
+
+    const clearCellValue = (cell: any): void => {
+      if (!cell) return;
+      delete cell.v;
+      delete cell.is;
+      delete cell['@_t'];
     };
 
     const setInlineString = (cell: any, text: string): void => {
@@ -131,18 +158,6 @@ export class QTYFiller {
       cell['@_t'] = 'inlineStr';
       cell.is = { t: { '#text': text } };
     };
-
-    let headerRowIdx = -1;
-    for (let i = 0; i < Math.min(rows.length, 200); i++) {
-      const r = rows[i];
-      const bCell = findCell(r, 'B');
-      const text = getCellText(bCell).toLowerCase().trim();
-      if (text === 'sub inventory') {
-        headerRowIdx = i;
-        break;
-      }
-    }
-    if (headerRowIdx === -1) return;
 
     const formatDDMMYYYY = (d: Date): string => {
       const dd = String(d.getDate()).padStart(2, '0');
@@ -156,16 +171,31 @@ export class QTYFiller {
       return v === undefined || v === null ? '' : String(v);
     };
 
-    for (let idx = 0; idx < inboundRows.length; idx++) {
-      const templateRow = rows[headerRowIdx + 1 + idx];
-      if (!templateRow) break;
-      const rowNum = Number(templateRow['@_r'] ?? headerRowIdx + 2 + idx);
+    const maxClearRows = 5000;
+    const maxWriteRows = Math.min(inboundRows.length, maxClearRows);
+
+    for (let r = 1; r <= maxClearRows; r++) {
+      const row = findRow(r);
+      if (!row) continue;
+      for (const col of ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+        const cell = getCell(row, col, r);
+        clearCellValue(cell);
+      }
+    }
+
+    for (let idx = 0; idx < maxWriteRows; idx++) {
+      const rowNum = idx + 1;
+      const templateRow = getOrCreateRow(rowNum);
 
       const bCell = getOrCreateCell(templateRow, 'B', rowNum);
       const cCell = getOrCreateCell(templateRow, 'C', rowNum);
       const dCell = getOrCreateCell(templateRow, 'D', rowNum);
       const eCell = getOrCreateCell(templateRow, 'E', rowNum);
       const fCell = getOrCreateCell(templateRow, 'F', rowNum);
+      const gCell = getOrCreateCell(templateRow, 'G', rowNum);
+      const hCell = getOrCreateCell(templateRow, 'H', rowNum);
+      const iCell = getOrCreateCell(templateRow, 'I', rowNum);
+      const jCell = getOrCreateCell(templateRow, 'J', rowNum);
 
       const data = inboundRows[idx] ?? {};
       setInlineString(bCell, getField(data, 'Sub Inventory'));
@@ -177,7 +207,13 @@ export class QTYFiller {
       setInlineString(eCell, dt ? formatDDMMYYYY(dt) : getField(data, 'Inbound at'));
 
       setInlineString(fCell, getField(data, 'Item'));
+      setInlineString(gCell, getField(data, 'box'));
+      setInlineString(hCell, getField(data, 'item'));
+      setInlineString(iCell, getField(data, 'pallet'));
+      setInlineString(jCell, getField(data, 'serial'));
     }
+
+    worksheetObj.worksheet.sheetData.row = rows;
   }
 
   private static patchScansOutboundWorksheetXml(
@@ -297,6 +333,7 @@ export class QTYFiller {
   ): Promise<FillResult> {
     const filledRows: FillResult['filledRows'] = [];
     const errors: string[] = [];
+    let suggestedFilename: string | undefined;
 
     try {
       const storageData = rawViewData?.get('Storage') ?? [];
@@ -359,10 +396,25 @@ export class QTYFiller {
       if (inboundData && inboundData.length) {
         const inboundSheetEntry = sheets.find(s => String(s['@_name'] ?? '').toLowerCase().trim().includes('scans inbound'));
         if (inboundSheetEntry) {
-          const inboundPeriod = this.extractPeriodFromRows(inboundData, 'Inbound at');
+          const cleanedInboundData = (() => {
+            const rows = Array.isArray(inboundData) ? inboundData.slice() : [];
+            if (!rows.length) return rows;
+            const first = rows[0] ?? {};
+            const hasTypeHeader = Object.entries(first).some(([k, v]) => {
+              const kk = String(k || '').toLowerCase();
+              const vv = String(v || '').toLowerCase();
+              return kk.includes('type') && vv.includes('billable scan logs');
+            });
+            if (hasTypeHeader) return rows.slice(1);
+            const anyFirstValue = Object.values(first).some(v => String(v || '').toLowerCase().includes('billable scan logs'));
+            return anyFirstValue ? rows.slice(1) : rows;
+          })();
+
+          const inboundPeriod = this.extractUniquePeriodFromRows(cleanedInboundData, 'Inbound at');
           const oldInboundName = String(inboundSheetEntry['@_name'] ?? 'Scans Inbound');
           if (inboundPeriod) {
             inboundSheetEntry['@_name'] = `Scans Inbound ${inboundPeriod.mm}-${inboundPeriod.yyyy}`;
+            suggestedFilename = `Afimilk New-Zealand -Test Invoice ${inboundPeriod.mm}-${inboundPeriod.yyyy}.xlsx`;
           }
 
           const inboundRelId = String(inboundSheetEntry['@_r:id'] ?? '');
@@ -371,7 +423,7 @@ export class QTYFiller {
             const inboundXmlRaw = await zip.file(inboundSheetPath)?.async('string');
             if (inboundXmlRaw) {
               const inboundObj: any = parser.parse(inboundXmlRaw);
-              this.patchScansInboundWorksheetXml(inboundObj, sharedStrings, inboundData);
+              this.patchScansInboundWorksheetXml(inboundObj, sharedStrings, cleanedInboundData);
               zip.file(inboundSheetPath, builder.build(inboundObj));
             }
           }
@@ -422,10 +474,10 @@ export class QTYFiller {
       const outBuffer = await zip.generateAsync({ type: 'nodebuffer' });
       await this.writeBufferToFile(outputPath, outBuffer);
 
-      return { success: errors.length === 0, filePath: outputPath, filledRows, errors };
+      return { success: errors.length === 0, filePath: outputPath, suggestedFilename, filledRows, errors };
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
-      return { success: false, filePath: outputPath, filledRows, errors: [...errors, err.message] };
+      return { success: false, filePath: outputPath, suggestedFilename, filledRows, errors: [...errors, err.message] };
     }
   }
 

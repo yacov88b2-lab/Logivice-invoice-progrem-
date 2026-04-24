@@ -115,13 +115,18 @@ export function UserDashboard() {
         const now = new Date();
         const localStamp = `${pad2(now.getDate())}-${pad2(now.getMonth() + 1)}-${now.getFullYear()} ${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
 
-        const customer = String(result?.pricelist?.customer || selectedCustomer || 'Customer').trim();
-        const mm = result?.billingPeriod?.mm;
-        const yyyy = result?.billingPeriod?.yyyy;
-        const period = mm && yyyy ? `${mm}-${yyyy}` : '';
-        const periodPart = period ? ` ${period}` : '';
+        const filename = (() => {
+          const suggested = String((result as any)?.suggestedFilename || '').trim();
+          if (suggested) return suggested;
 
-        const filename = `${customer}${periodPart} ${localStamp}.xlsx`;
+          const customer = String(result?.pricelist?.customer || selectedCustomer || 'Customer').trim();
+          const mm = result?.billingPeriod?.mm;
+          const yyyy = result?.billingPeriod?.yyyy;
+          const period = mm && yyyy ? `${mm}-${yyyy}` : '';
+          const periodPart = period ? ` ${period}` : '';
+
+          return `${customer}${periodPart} ${localStamp}.xlsx`;
+        })();
 
         const res = await fetch(api.downloadInvoice(result.auditLogId));
         if (!res.ok) throw new Error('Failed to download invoice');
