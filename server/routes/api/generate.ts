@@ -273,6 +273,7 @@ router.post('/invoice', async (req, res) => {
         customer: pricelist.customer_name,
         warehouse: pricelist.warehouse_code
       },
+      suggestedFilename: fillResult.suggestedFilename,
       summary: {
         totalTransactions: transactions.length,
         matched: matches.length,

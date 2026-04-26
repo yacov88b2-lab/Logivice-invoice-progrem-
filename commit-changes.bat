@@ -46,11 +46,19 @@ echo Current status:
 git status --short
 
 echo.
+echo Summary of changes (for commit description):
+echo --------------------------------------
+git diff --name-only
+echo.
+git diff --stat
+echo --------------------------------------
+
+echo.
 set "COMMIT_MSG="
-set /p COMMIT_MSG=Enter commit message: 
+set /p COMMIT_MSG=Enter one-line summary (title): 
 if "%COMMIT_MSG%"=="" (
   echo.
-  echo ERROR: commit message cannot be empty.
+  echo ERROR: summary cannot be empty.
   pause
   exit /b 1
 )
@@ -65,9 +73,38 @@ if %ERRORLEVEL% neq 0 (
   exit /b 1
 )
 
+git diff --cached --quiet
+if %ERRORLEVEL%==0 (
+  echo.
+  echo ERROR: no staged changes to commit.
+  echo.
+  pause
+  exit /b 1
+)
+
+echo.
+echo Staged changes summary:
+echo --------------------------------------
+git diff --cached --name-only
+echo.
+git diff --cached --stat
+echo --------------------------------------
+
 echo.
 echo Committing...
-git commit -m "%COMMIT_MSG%"
+set "COMMIT_FILE=.git-commit-msg-temp.txt"
+(
+  echo %COMMIT_MSG%
+  echo.
+  echo Files changed:
+  git diff --cached --name-only
+  echo.
+  echo Diffstat:
+  git diff --cached --stat
+) > "%COMMIT_FILE%"
+
+git commit -F "%COMMIT_FILE%"
+del "%COMMIT_FILE%" >nul 2>nul
 if %ERRORLEVEL% neq 0 (
   echo.
   echo ERROR: git commit failed.

@@ -104,6 +104,7 @@ export interface GenerateResponse {
     customer: string;
     warehouse: string;
   };
+  suggestedFilename?: string;
   summary: {
     totalTransactions: number;
     matched: number;

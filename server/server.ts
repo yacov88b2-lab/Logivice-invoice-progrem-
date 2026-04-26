@@ -11,10 +11,19 @@ import deployRouter from './routes/deploy';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Avoid 304 responses without bodies for API fetch() calls
+app.set('etag', false);
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Prevent caching of API responses in the browser
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 // Initialize database
 initDatabase();
