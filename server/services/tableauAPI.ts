@@ -353,8 +353,10 @@ export class TableauAPIClient {
     }
     
     // Apply client-side date filtering if dateRange provided
+    // Keep rawData (unfiltered) for Excel sheet copying, filtered data for transaction matching
     if (dateRange && result.data && Array.isArray(result.data)) {
       const beforeCount = result.data.length;
+      result.rawData = result.data; // preserve ALL rows for raw sheet output
       result.data = this.filterByDateRange(result.data, dateRange.start, dateRange.end);
       console.log(`[Tableau] Client-side date filtering: ${beforeCount} -> ${result.data.length} rows`);
     }
@@ -617,8 +619,9 @@ export class TableauAPIClient {
         const viewData = await this.queryViewData(view.id, {}, {start: startDate, end: endDate});
         
         if (viewData && viewData.data) {
-          // Store RAW data for Excel sheets
-          rawViewData.set(view.name, viewData.data);
+          // Store RAW (unfiltered) data for Excel sheets — use all rows regardless of date filter
+          // Trim view name to avoid trailing space mismatches (e.g. "Inbound " vs "Inbound")
+          rawViewData.set(view.name.trim(), viewData.rawData || viewData.data);
           
           if (segment) {
             const transactions = this.transformTableauData(
@@ -695,6 +698,7 @@ export class TableauAPIClient {
       const hasQTY = row['QTY'] !== undefined;
       const hasValue = row['Value'] !== undefined;
       const hasDistinctCount = row['Distinct count of Ref (Orders)'] !== undefined;
+      const hasDistinctCountId = row['Distinct count of Id (Billable Scan Logs)'] !== undefined;
       const hasDomInt = row["Dom/Int'l"] !== undefined;
       
       // For Transactions view, use the Type column as segment (Inbound/Outbound)
@@ -719,10 +723,13 @@ export class TableauAPIClient {
       
       // Extract quantity from various possible column names
       let qty = 0;
-      if (hasQTY) {
-        qty = parseFloat(row['QTY']) || 0;
+      if (hasDistinctCountId) {
+        // Priority: Distinct count of Id (Billable Scan Logs) for box/serial/item counts
+        qty = parseFloat(row['Distinct count of Id (Billable Scan Logs)']) || 0;
       } else if (hasDistinctCount) {
         qty = parseFloat(row['Distinct count of Ref (Orders)']) || 0;
+      } else if (hasQTY) {
+        qty = parseFloat(row['QTY']) || 0;
       } else if (hasValue) {
         qty = parseFloat(row['Value']) || 0;
       }
@@ -803,6 +810,13 @@ export class TableauAPIClient {
       let uom = 'order';
       if (row['Name (Warehouses)']) {
         uom = row['Name (Warehouses)'];
+      }
+
+      // For Storage segment, override movement/category/uom to match pricelist format
+      if (actualSegment === 'Storage') {
+        movementType = 'Space';
+        category = 'per area';
+        uom = 'per month';
       }
       
       // Extract date (use same heuristics as filterByDateRange so date-range requests are accurate)

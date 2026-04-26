@@ -1,4 +1,7 @@
 import * as XLSX from 'xlsx';
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const ExcelJS = _require('exceljs') as typeof import('exceljs');
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -655,42 +658,204 @@ export class QTYFiller {
     }
   }
 
-  static fill(
+  /**
+   * For Sensos NL: compute correct quantities from raw Tableau view data.
+   * - Inbound Per Order  = distinct Ref (Orders) in Inbound view
+   * - Inbound Per Unit Scan (Per Box) = rows where Type (Billable Scan Logs) === 'box'
+   * - Outbound Per Order Domestic/International = distinct refs filtered by Dom/Int'l
+   * - Outbound Per Unit Scan (Per Box) = rows where Type === 'box' in Outbound view
+   * Returns a Map keyed by getLineItemKey pattern that callers merge into the quantities map.
+   */
+  private static buildSensosQuantities(rawViewData: Map<string, any[]>): Map<string, number> {
+    const result = new Map<string, number>();
+
+    const getView = (name: string): any[] => {
+      if (rawViewData.has(name)) return rawViewData.get(name)!;
+      for (const [k, v] of rawViewData.entries()) {
+        if (k.trim() === name) return v;
+      }
+      return [];
+    };
+
+    const findCol = (headers: string[], keywords: string[]): string | undefined =>
+      headers.find(h => keywords.some(kw => h.toLowerCase().includes(kw.toLowerCase())));
+
+    // --- Inbound ---
+    const inboundData = getView('Inbound');
+    if (inboundData.length > 0) {
+      const headers = Object.keys(inboundData[0]);
+      const refCol  = findCol(headers, ['Ref (Orders)', 'ref']);
+      const typeCol = findCol(headers, ['Type (Billable', 'Type (Bil', 'type']);
+
+      const distinctRefs = new Set<string>();
+      let boxCount = 0;
+      for (const row of inboundData) {
+        if (refCol) distinctRefs.add(String(row[refCol] ?? ''));
+        if (typeCol && String(row[typeCol] ?? '').toLowerCase().trim() === 'box') boxCount++;
+      }
+
+      // Match pricelist keys: segment=Inbound, clause=Per Order / Per Unit Scan
+      // We match by segment+clause prefix and override — iterate quantities to find matching keys
+      result.set('__sensos_inbound_orders', distinctRefs.size);
+      result.set('__sensos_inbound_boxes', boxCount);
+      console.log(`[QTYFiller] Sensos Inbound: ${distinctRefs.size} orders, ${boxCount} boxes`);
+    }
+
+    // --- Outbound ---
+    const outboundData = getView('Outbound');
+    if (outboundData.length > 0) {
+      const headers   = Object.keys(outboundData[0]);
+      console.log(`[QTYFiller] Outbound headers: ${JSON.stringify(headers)}`);
+      console.log(`[QTYFiller] Outbound row[0]: ${JSON.stringify(outboundData[0])}`);
+      const refCol    = findCol(headers, ['Ref (Orders)', 'ref']);
+      // exact match 'box' first, then fallback to includes
+      const boxCol    = headers.find(h => h.trim().toLowerCase() === 'box') ?? findCol(headers, ['box']);
+      const domIntCol = findCol(headers, ["Dom/Int", 'domint', 'domestic']);
+      console.log(`[QTYFiller] Outbound cols - ref:${refCol}, box:${boxCol}, domInt:${domIntCol}`);
+
+      const domRefs = new Set<string>();
+      const intRefs = new Set<string>();
+      let outBoxCount = 0;
+      for (const row of outboundData) {
+        const ref    = refCol ? String(row[refCol] ?? '') : '';
+        const boxVal = boxCol ? (parseFloat(String(row[boxCol] ?? '0')) || 0) : 0;
+        const domInt = domIntCol ? String(row[domIntCol] ?? '').toLowerCase() : '';
+        outBoxCount += boxVal; // sum numeric box column
+        if ((domInt.includes('local') || domInt.includes('dom')) && ref) domRefs.add(ref);
+        else if ((domInt.includes("int'l") || domInt.includes('int')) && ref) intRefs.add(ref);
+        else if (ref) domRefs.add(ref); // default to domestic
+      }
+
+      result.set('__sensos_outbound_dom_orders', domRefs.size);
+      result.set('__sensos_outbound_int_orders', intRefs.size);
+      result.set('__sensos_outbound_boxes', outBoxCount);
+      console.log(`[QTYFiller] Sensos Outbound: ${domRefs.size} dom orders, ${intRefs.size} int orders, ${outBoxCount} boxes`);
+    }
+
+    return result;
+  }
+
+  private static async fillWithExcelJS(
+    pricelistBuffer: Buffer,
+    templateStructure: TemplateStructure,
+    quantities: Map<string, number>,
+    outputPath: string,
+    filledRows: FillResult['filledRows'],
+    errors: string[]
+  ): Promise<void> {
+    const excelWorkbook = new ExcelJS.Workbook();
+    await excelWorkbook.xlsx.load(pricelistBuffer as any);
+
+    for (const sheet of templateStructure.sheets) {
+      if (sheet.type !== 'invoice') continue;
+      const worksheet = excelWorkbook.getWorksheet(sheet.name);
+      if (!worksheet) {
+        errors.push(`Sheet not found: ${sheet.name}`);
+        continue;
+      }
+
+      for (const item of sheet.lineItems) {
+        const key = this.getLineItemKey(item);
+        const newQty = quantities.get(key);
+        if (newQty === undefined) continue;
+
+        const { columns } = templateStructure;
+        // ExcelJS uses 1-based row and 1-based column
+        const row = worksheet.getRow(item.row);
+        const qtyCell   = row.getCell(columns.qty + 1);
+        const totalCell = row.getCell(columns.total + 1);
+        const rateCell  = row.getCell(columns.rate + 1);
+
+        const oldQty   = qtyCell.value as number | null;
+        const rate     = (rateCell.value as number) || 0;
+        const newTotal = newQty * rate;
+
+        qtyCell.value   = newQty;
+        totalCell.value = newTotal;
+
+        filledRows.push({
+          sheet: sheet.name,
+          row: item.row,
+          oldQty: oldQty !== null ? Number(oldQty) : null,
+          newQty,
+          oldTotal: 0,
+          newTotal
+        });
+      }
+    }
+
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await excelWorkbook.xlsx.writeFile(outputPath);
+    console.log(`[QTYFiller] ExcelJS wrote template with styles preserved: ${outputPath}`);
+  }
+
+  static async fill(
     pricelistBuffer: Buffer,
     templateStructure: TemplateStructure,
     quantities: Map<string, number>,
     outputPath: string,
     transactions?: Transaction[],
     rawViewData?: Map<string, any[]>
-  ): FillResult {
-    const workbook = XLSX.read(pricelistBuffer, { type: 'buffer' });
+  ): Promise<FillResult> {
     const filledRows: FillResult['filledRows'] = [];
     const errors: string[] = [];
 
-    // Add raw data sheets for Afimilk NZ structure
+    // For Sensos NL: override quantity map using raw view data (orders + boxes)
     if (rawViewData) {
-      // Raw data sheets from Tableau views
-      const inbound = rawViewData.get('Inbound');
+      const sensosSummary = this.buildSensosQuantities(rawViewData);
+      // Map internal sensos keys to actual pricelist line item keys
+      for (const sheet of templateStructure.sheets) {
+        if (sheet.type !== 'invoice') continue;
+        for (const item of sheet.lineItems) {
+          const seg    = item.segment.toLowerCase();
+          const clause = item.clause.toLowerCase();
+          const cat    = item.category.toLowerCase();
+          const key    = this.getLineItemKey(item);
+          if (seg === 'inbound' && clause.includes('per order')) {
+            quantities.set(key, sensosSummary.get('__sensos_inbound_orders') ?? 0);
+          } else if (seg === 'inbound' && clause.includes('per unit scan') && (cat.includes('box') || cat.includes('per box'))) {
+            quantities.set(key, sensosSummary.get('__sensos_inbound_boxes') ?? 0);
+          } else if (seg === 'outbound' && clause.includes('per order') && cat.includes('dom')) {
+            quantities.set(key, sensosSummary.get('__sensos_outbound_dom_orders') ?? 0);
+          } else if (seg === 'outbound' && clause.includes('per order') && cat.includes('int')) {
+            quantities.set(key, sensosSummary.get('__sensos_outbound_int_orders') ?? 0);
+          } else if (seg === 'outbound' && clause.includes('per unit scan') && (cat.includes('box') || cat.includes('per box'))) {
+            quantities.set(key, sensosSummary.get('__sensos_outbound_boxes') ?? 0);
+          }
+        }
+      }
+    }
+
+    // Step 1: Use ExcelJS to fill Qty/Total into the template (preserves all styles/colors)
+    await this.fillWithExcelJS(pricelistBuffer, templateStructure, quantities, outputPath, filledRows, errors);
+
+    // Step 2: Use XLSX to add raw data sheets on top of the already-written file
+    const writtenBuffer = await fs.readFile(outputPath);
+    const workbook = XLSX.read(writtenBuffer, { type: 'buffer', cellStyles: true });
+
+    if (rawViewData) {
+      console.log('[QTYFiller] rawViewData keys:', Array.from(rawViewData.keys()).map(k => `"${k}"(${rawViewData.get(k)?.length}rows)`).join(', '));
+      const getView = (name: string) => {
+        if (rawViewData.has(name)) return rawViewData.get(name);
+        for (const [k, v] of rawViewData.entries()) {
+          if (k.trim() === name) return v;
+        }
+        return undefined;
+      };
+      const inbound = getView('Inbound');
       if (inbound) this.addRawSheet(workbook, inbound, 'Inbound');
-
-      const outbound = rawViewData.get('Outbound');
+      const outbound = getView('Outbound');
       if (outbound) this.addRawSheet(workbook, outbound, 'Outbound');
-
-      const storage = rawViewData.get('Storage');
+      const storage = getView('Storage');
       if (storage) this.addRawSheet(workbook, storage, 'Storage');
-      
       const vas = rawViewData.get('VAS');
       if (vas) this.addRawSheet(workbook, vas, 'VAS');
-      
       const management = rawViewData.get('Management') || rawViewData.get('Managment');
       if (management) this.addRawSheet(workbook, management, 'Management');
-      
       const pivot = rawViewData.get('Pivot');
       if (pivot) this.addRawSheet(workbook, pivot, 'Pivot');
-      
       const pivotOut = rawViewData.get('Pivot Out');
       if (pivotOut) this.addRawSheet(workbook, pivotOut, 'Pivot Out');
-      
       const exw = rawViewData.get('EXW');
       if (exw) this.addRawSheet(workbook, exw, 'EXW');
     }
@@ -699,9 +864,7 @@ export class QTYFiller {
       this.addAnalyzeSheet(workbook, transactions);
     }
 
-    this.fillInvoiceSheets(workbook, templateStructure, quantities, filledRows, errors);
-
-    XLSX.writeFile(workbook, outputPath);
+    XLSX.writeFile(workbook, outputPath, { cellStyles: true });
     return { success: errors.length === 0, filePath: outputPath, filledRows, errors };
   }
 
@@ -1303,19 +1466,129 @@ export class QTYFiller {
     const rows = sorted.map(([month, v]) => [month, v.pallet, v.shelf]);
 
     const sheet = XLSX.utils.aoa_to_sheet([['Month', 'Locations of type Pallet', 'Locations of type Shelf'], ...rows]);
-    workbook.SheetNames.push(sheetName);
+    if (!workbook.SheetNames.includes(sheetName)) {
+      workbook.SheetNames.push(sheetName);
+    }
     workbook.Sheets[sheetName] = sheet;
     console.log(`[QTYFiller] ${sheetName}: ${rows.length} months`);
   }
 
   private static addRawSheet(workbook: XLSX.WorkBook, data: any[], name: string): void {
     if (!data.length) return;
+
     const headers = Object.keys(data[0]);
     const rows = data.map(r => headers.map(h => r[h] ?? ''));
-    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    workbook.SheetNames.push(name);
-    workbook.Sheets[name] = sheet;
-    console.log(`[QTYFiller] ${name}: ${data.length} rows`);
+
+    // Build the sheet as AoA so we can append the summary table to the right
+    const aoa: any[][] = [headers, ...rows];
+
+    // For Inbound / Outbound sheets: add a summary calculation table to the right
+    if (name === 'Inbound' || name === 'Outbound') {
+      const findCol = (keywords: string[]) =>
+        headers.find(h => keywords.some(kw => h.toLowerCase().includes(kw.toLowerCase())));
+
+      const serviceLevelCol = findCol(['Service Level', 'service_name', 'Name (Service']);
+      const refCol          = findCol(['Ref (Orders)', 'Ref(Orders)', 'ref']);
+      const boxCol          = findCol(['box']);
+
+      const startCol = headers.length + 1;
+      let summaryHeader: string[];
+      let summaryDataRows: any[][];
+      let totalRefs = 0;
+      let totalBoxes = 0;
+
+      if (name === 'Inbound') {
+        // Inbound: group by Service Level only
+        // box column contains text 'box' → count rows where value === 'box'
+        const typeCol = findCol(['Type (Billable', 'Type (Bil', 'type']);
+        const pivot = new Map<string, { refs: Set<string>; boxes: number }>();
+        for (const row of data) {
+          const svcLevel  = serviceLevelCol ? String(row[serviceLevelCol] ?? 'Unknown') : 'Unknown';
+          const ref       = refCol ? String(row[refCol] ?? '') : '';
+          const typeValue = typeCol ? String(row[typeCol] ?? '').toLowerCase().trim() : '';
+          if (!pivot.has(svcLevel)) pivot.set(svcLevel, { refs: new Set(), boxes: 0 });
+          const entry = pivot.get(svcLevel)!;
+          if (ref) entry.refs.add(ref);
+          if (typeValue === 'box') entry.boxes += 1;
+        }
+        summaryHeader = [
+          serviceLevelCol ?? 'Name (Service Levels)',
+          'Distinct count of Ref (Orders)',
+          'box'
+        ];
+        summaryDataRows = [];
+        for (const [svcLevel, { refs, boxes }] of pivot.entries()) {
+          summaryDataRows.push([svcLevel, refs.size, boxes]);
+          totalRefs  += refs.size;
+          totalBoxes += boxes;
+        }
+
+      } else {
+        // Outbound: group by Service Level + Dom/Int'l
+        // box column is numeric → sum it per group
+        const domIntCol = findCol(["Dom/Int'l", "Dom/Int", 'domint']);
+        const pivot = new Map<string, { svc: string; domInt: string; refs: Set<string>; boxes: number }>();
+        for (const row of data) {
+          const svcLevel = serviceLevelCol ? String(row[serviceLevelCol] ?? 'Unknown') : 'Unknown';
+          const domInt   = domIntCol ? String(row[domIntCol] ?? '') : '';
+          const ref      = refCol ? String(row[refCol] ?? '') : '';
+          const boxVal   = boxCol ? (parseFloat(String(row[boxCol] ?? '0')) || 0) : 0;
+          const key      = `${svcLevel}||${domInt}`;
+          if (!pivot.has(key)) pivot.set(key, { svc: svcLevel, domInt, refs: new Set(), boxes: 0 });
+          const entry = pivot.get(key)!;
+          if (ref) entry.refs.add(ref);
+          entry.boxes += boxVal;
+        }
+        summaryHeader = ['Name', "Dom/Int'l", 'Ref count', 'Boxed count'];
+        summaryDataRows = [];
+        for (const { svc, domInt, refs, boxes } of pivot.values()) {
+          summaryDataRows.push([svc, domInt, refs.size, boxes]);
+          totalRefs  += refs.size;
+          totalBoxes += boxes;
+        }
+      }
+
+      // Write header row into aoa[0]
+      if (!aoa[0]) aoa[0] = [];
+      while (aoa[0].length < startCol) aoa[0].push('');
+      summaryHeader.forEach((h, i) => { aoa[0][startCol + i] = h; });
+
+      // Write data rows
+      for (let i = 0; i < summaryDataRows.length; i++) {
+        const r = i + 1;
+        if (!aoa[r]) aoa[r] = [];
+        while (aoa[r].length < startCol) aoa[r].push('');
+        summaryDataRows[i].forEach((v, j) => { aoa[r][startCol + j] = v; });
+      }
+
+      // Totals row
+      const totalRow = summaryDataRows.length + 1;
+      if (!aoa[totalRow]) aoa[totalRow] = [];
+      while (aoa[totalRow].length < startCol) aoa[totalRow].push('');
+      if (name === 'Inbound') {
+        aoa[totalRow][startCol]     = 'Total';
+        aoa[totalRow][startCol + 1] = totalRefs;
+        aoa[totalRow][startCol + 2] = totalBoxes;
+      } else {
+        aoa[totalRow][startCol]     = 'Total';
+        aoa[totalRow][startCol + 2] = totalRefs;
+        aoa[totalRow][startCol + 3] = totalBoxes;
+      }
+
+      console.log(`[QTYFiller] ${name} summary: ${summaryDataRows.length} groups, ${totalRefs} orders, ${totalBoxes} boxes`);
+    }
+
+    const sheet = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Write into workbook (overwrite if sheet already exists in template)
+    if (workbook.SheetNames.includes(name)) {
+      console.log(`[QTYFiller] Overwriting existing sheet '${name}' with ${data.length} rows + summary`);
+      workbook.Sheets[name] = sheet;
+    } else {
+      workbook.SheetNames.push(name);
+      workbook.Sheets[name] = sheet;
+      console.log(`[QTYFiller] ${name}: ${data.length} rows`);
+    }
   }
 
   private static addAnalyzeSheet(workbook: XLSX.WorkBook, transactions: Transaction[]): void {

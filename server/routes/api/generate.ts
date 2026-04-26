@@ -236,7 +236,7 @@ router.post('/invoice', async (req, res) => {
           transactions,
           rawViewData
         )
-      : QTYFiller.fill(
+      : await QTYFiller.fill(
           pricelistBuffer,
           pricelist.template_structure,
           quantityMap,

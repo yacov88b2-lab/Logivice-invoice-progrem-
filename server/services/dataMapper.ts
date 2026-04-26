@@ -127,7 +127,10 @@ export class DataMapper {
   }
 
   private static normalize(str: string): string {
-    return str.toLowerCase().trim().replace(/\s+/g, ' ');
+    let s = str.toLowerCase().trim().replace(/\s+/g, ' ');
+    // Treat 'general' and 'regular' as synonyms (different customers use different terms)
+    if (s === 'general' || s === 'regular') s = 'general';
+    return s;
   }
 
   private static fuzzyMatch(
