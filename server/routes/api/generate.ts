@@ -234,7 +234,17 @@ router.post('/invoice', async (req, res) => {
           pricelist.template_structure,
           quantityMap,
           transactions,
-          rawViewData
+          rawViewData,
+          (() => {
+            const start = new Date(String(start_date));
+            const end = new Date(String(end_date));
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+            if (start.getFullYear() !== end.getFullYear()) return null;
+            if (start.getMonth() !== end.getMonth()) return null;
+            const mm = String(start.getMonth() + 1).padStart(2, '0');
+            const yyyy = String(start.getFullYear());
+            return { mm, yyyy };
+          })()
         )
       : QTYFiller.fill(
           pricelistBuffer,

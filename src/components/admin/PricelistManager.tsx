@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { PricelistList } from './PricelistList';
 import { PricelistUpload } from './PricelistUpload';
 import type { Pricelist } from '../../types';
+import { API_BASE } from '../../api';
 
 export function PricelistManager() {
   const [showUpload, setShowUpload] = useState(false);
@@ -30,7 +31,7 @@ export function PricelistManager() {
 
   const checkDeployStatus = async () => {
     try {
-      const response = await fetch('/api/deploy/status');
+      const response = await fetch(`${API_BASE}/deploy/status`);
       const data = await response.json();
       setDeployStatus(prev => ({
         ...prev,
@@ -51,7 +52,7 @@ export function PricelistManager() {
     setDeployStatus(prev => ({ ...prev, loading: true, lastDeployResult: null }));
     
     try {
-      const response = await fetch('/api/deploy/deploy-to-production', {
+      const response = await fetch(`${API_BASE}/deploy/deploy-to-production`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
