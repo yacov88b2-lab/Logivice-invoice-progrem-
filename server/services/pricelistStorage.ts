@@ -9,7 +9,8 @@ export class PricelistStorage {
   private localUploadDir: string;
 
   constructor() {
-    this.localUploadDir = path.join(process.cwd(), 'uploads', 'pricelists');
+    const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(process.cwd(), 'data');
+    this.localUploadDir = path.join(dataDir, 'uploads', 'pricelists');
     this.ensureLocalDir();
   }
 
