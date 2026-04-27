@@ -1466,22 +1466,25 @@ export class QTYFiller {
 
       if (name === 'Inbound') {
         // Inbound: group by Service Level only
-        // box column contains text 'box' → count rows where value === 'box'
-        const typeCol = findCol(['Type (Billable', 'Type (Bil', 'type']);
+        // Box count = sum of "Distinct count of Id (Billable Scan Logs)" values
+        const distinctCountIdCol = findCol(['Distinct count of Id', 'Billable Scan Logs']);
         const pivot = new Map<string, { refs: Set<string>; boxes: number }>();
         for (const row of data) {
           const svcLevel  = serviceLevelCol ? String(row[serviceLevelCol] ?? 'Unknown') : 'Unknown';
           const ref       = refCol ? String(row[refCol] ?? '') : '';
-          const typeValue = typeCol ? String(row[typeCol] ?? '').toLowerCase().trim() : '';
           if (!pivot.has(svcLevel)) pivot.set(svcLevel, { refs: new Set(), boxes: 0 });
           const entry = pivot.get(svcLevel)!;
           if (ref) entry.refs.add(ref);
-          if (typeValue === 'box') entry.boxes += 1;
+          // Sum "Distinct count of Id (Billable Scan Logs)" values for box count
+          if (distinctCountIdCol) {
+            const val = parseFloat(String(row[distinctCountIdCol] ?? '0')) || 0;
+            entry.boxes += val;
+          }
         }
         summaryHeader = [
           serviceLevelCol ?? 'Name (Service Levels)',
           'Distinct count of Ref (Orders)',
-          'box'
+          'Boxed count'
         ];
         summaryDataRows = [];
         for (const [svcLevel, { refs, boxes }] of pivot.entries()) {
@@ -1492,19 +1495,23 @@ export class QTYFiller {
 
       } else {
         // Outbound: group by Service Level + Dom/Int'l
-        // box column is numeric → sum it per group
-        const domIntCol = findCol(["Dom/Int'l", "Dom/Int", 'domint']);
+        // Box count = sum of "Distinct count of Id (Billable Scan Logs)" values
+        const domIntCol = findCol(["Dom/Int'l", 'Dom/Int', 'domint']);
+        const distinctCountIdCol = findCol(['Distinct count of Id', 'Billable Scan Logs']);
         const pivot = new Map<string, { svc: string; domInt: string; refs: Set<string>; boxes: number }>();
         for (const row of data) {
           const svcLevel = serviceLevelCol ? String(row[serviceLevelCol] ?? 'Unknown') : 'Unknown';
           const domInt   = domIntCol ? String(row[domIntCol] ?? '') : '';
           const ref      = refCol ? String(row[refCol] ?? '') : '';
-          const boxVal   = boxCol ? (parseFloat(String(row[boxCol] ?? '0')) || 0) : 0;
           const key      = `${svcLevel}||${domInt}`;
           if (!pivot.has(key)) pivot.set(key, { svc: svcLevel, domInt, refs: new Set(), boxes: 0 });
           const entry = pivot.get(key)!;
           if (ref) entry.refs.add(ref);
-          entry.boxes += boxVal;
+          // Sum "Distinct count of Id (Billable Scan Logs)" values for box count
+          if (distinctCountIdCol) {
+            const val = parseFloat(String(row[distinctCountIdCol] ?? '0')) || 0;
+            entry.boxes += val;
+          }
         }
         summaryHeader = ['Name', "Dom/Int'l", 'Ref count', 'Boxed count'];
         summaryDataRows = [];
