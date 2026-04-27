@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
-const ExcelJS = _require('exceljs') as typeof import('exceljs');
+const ExcelJS = _require('exceljs') as any;
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -65,6 +65,17 @@ export class QTYFiller {
       const dd = Number(m[1]);
       const mm = Number(m[2]);
       const yyyy = Number(m[3]);
+      if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
+        const d = new Date(yyyy, mm - 1, dd);
+        return isNaN(d.getTime()) ? null : d;
+      }
+    }
+
+    const mdot = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+.*)?$/);
+    if (mdot) {
+      const dd = Number(mdot[1]);
+      const mm = Number(mdot[2]);
+      const yyyy = Number(mdot[3]);
       if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
         const d = new Date(yyyy, mm - 1, dd);
         return isNaN(d.getTime()) ? null : d;
@@ -177,11 +188,7 @@ export class QTYFiller {
     const maxClearRows = 5000;
     const maxWriteRows = Math.min(inboundRows.length, maxClearRows);
 
-<<<<<<< HEAD
     for (let r = 2; r <= maxClearRows + 1; r++) {
-=======
-    for (let r = 1; r <= maxClearRows; r++) {
->>>>>>> ae726cee006476e5b47e1cd60d2c797ec9558271
       const row = findRow(r);
       if (!row) continue;
       for (const col of ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
@@ -191,11 +198,7 @@ export class QTYFiller {
     }
 
     for (let idx = 0; idx < maxWriteRows; idx++) {
-<<<<<<< HEAD
       const rowNum = idx + 2;
-=======
-      const rowNum = idx + 1;
->>>>>>> ae726cee006476e5b47e1cd60d2c797ec9558271
       const templateRow = getOrCreateRow(rowNum);
 
       const bCell = getOrCreateCell(templateRow, 'B', rowNum);
@@ -387,7 +390,18 @@ export class QTYFiller {
             return anyFirstValue ? rows.slice(1) : rows;
           })();
 
-          const inboundPeriod = this.extractUniquePeriodFromRows(cleanedInboundData, 'Inbound at');
+          const inboundRowsInExpectedPeriod = expectedInboundPeriod
+            ? cleanedInboundData.filter(r => {
+                const raw = this.getFieldValue(r, 'Inbound at');
+                const dt = this.parseTableauDate(raw);
+                if (!dt) return false;
+                const mm = String(dt.getMonth() + 1).padStart(2, '0');
+                const yyyy = String(dt.getFullYear());
+                return mm === expectedInboundPeriod.mm && yyyy === expectedInboundPeriod.yyyy;
+              })
+            : cleanedInboundData;
+
+          const inboundPeriod = this.extractUniquePeriodFromRows(inboundRowsInExpectedPeriod, 'Inbound at');
           const oldInboundName = String(inboundSheetEntry['@_name'] ?? 'Scans Inbound');
           const shouldRenameInbound =
             !!expectedInboundPeriod &&
@@ -406,7 +420,7 @@ export class QTYFiller {
             const inboundXmlRaw = await zip.file(inboundSheetPath)?.async('string');
             if (inboundXmlRaw) {
               const inboundObj: any = parser.parse(inboundXmlRaw);
-              this.patchScansInboundWorksheetXml(inboundObj, sharedStrings, cleanedInboundData);
+              this.patchScansInboundWorksheetXml(inboundObj, sharedStrings, inboundRowsInExpectedPeriod);
               zip.file(inboundSheetPath, builder.build(inboundObj));
             }
           }
