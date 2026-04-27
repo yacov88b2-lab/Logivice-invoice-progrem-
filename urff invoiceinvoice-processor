@@ -1,0 +1,185 @@
+warning: in the working copy of 'temp_qtyfiller_old.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'temp_qtyfiller.ts', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/temp_qtyfiller_old.ts b/temp_qtyfiller.ts[m
+[1mindex 4c893c8..976522d 100644[m
+[1m--- a/temp_qtyfiller_old.ts[m
+[1m+++ b/temp_qtyfiller.ts[m
+[36m@@ -1,7 +1,7 @@[m
+ import * as XLSX from 'xlsx';[m
+ import { createRequire } from 'module';[m
+ const _require = createRequire(import.meta.url);[m
+[31m-const ExcelJS = _require('exceljs') as typeof import('exceljs');[m
+[32m+[m[32mconst ExcelJS = _require('exceljs') as any;[m
+ import { promises as fs } from 'node:fs';[m
+ import path from 'node:path';[m
+ import JSZip from 'jszip';[m
+[36m@@ -71,6 +71,17 @@[m [mexport class QTYFiller {[m
+       }[m
+     }[m
+ [m
+[32m+[m[32m    const mdot = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+.*)?$/);[m
+[32m+[m[32m    if (mdot) {[m
+[32m+[m[32m      const dd = Number(mdot[1]);[m
+[32m+[m[32m      const mm = Number(mdot[2]);[m
+[32m+[m[32m      const yyyy = Number(mdot[3]);[m
+[32m+[m[32m      if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {[m
+[32m+[m[32m        const d = new Date(yyyy, mm - 1, dd);[m
+[32m+[m[32m        return isNaN(d.getTime()) ? null : d;[m
+[32m+[m[32m      }[m
+[32m+[m[32m    }[m
+[32m+[m
+     const d = new Date(s);[m
+     return isNaN(d.getTime()) ? null : d;[m
+   }[m
+[36m@@ -177,7 +188,7 @@[m [mexport class QTYFiller {[m
+     const maxClearRows = 5000;[m
+     const maxWriteRows = Math.min(inboundRows.length, maxClearRows);[m
+ [m
+[31m-    for (let r = 1; r <= maxClearRows; r++) {[m
+[32m+[m[32m    for (let r = 2; r <= maxClearRows + 1; r++) {[m
+       const row = findRow(r);[m
+       if (!row) continue;[m
+       for (const col of ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {[m
+[36m@@ -187,7 +198,7 @@[m [mexport class QTYFiller {[m
+     }[m
+ [m
+     for (let idx = 0; idx < maxWriteRows; idx++) {[m
+[31m-      const rowNum = idx + 1;[m
+[32m+[m[32m      const rowNum = idx + 2;[m
+       const templateRow = getOrCreateRow(rowNum);[m
+ [m
+       const bCell = getOrCreateCell(templateRow, 'B', rowNum);[m
+[36m@@ -332,17 +343,14 @@[m [mexport class QTYFiller {[m
+     templateStructure: TemplateStructure,[m
+     quantities: Map<string, number>,[m
+     transactions?: Transaction[],[m
+[31m-    rawViewData?: Map<string, any[]>[m
+[32m+[m[32m    rawViewData?: Map<string, any[]>,[m
+[32m+[m[32m    expectedInboundPeriod?: { mm: string; yyyy: string } | null[m
+   ): Promise<FillResult> {[m
+     const filledRows: FillResult['filledRows'] = [];[m
+     const errors: string[] = [];[m
+     let suggestedFilename: string | undefined;[m
+ [m
+     try {[m
+[31m-      const storageData = rawViewData?.get('Storage') ?? [];[m
+[31m-      const management = rawViewData?.get('Management') || rawViewData?.get('Managment') || [];[m
+[31m-      const analyzeRows = this.buildAnalyzeRows(transactions ?? []);[m
+[31m-[m
+       const zip = await JSZip.loadAsync(pricelistBuffer);[m
+       const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });[m
+       const builder = new XMLBuilder({ ignoreAttributes: false, attributeNamePrefix: '@_', suppressEmptyNode: true });[m
+[36m@@ -364,37 +372,6 @@[m [mexport class QTYFiller {[m
+       const sharedStringsXml = await zip.file('xl/sharedStrings.xml')?.async('string');[m
+       const sharedStrings = sharedStringsXml ? this.parseSharedStrings(parser.parse(sharedStringsXml)) : [];[m
+ [m
+[31m-      if (storageData.length) {[m
+[31m-        const sorted = this.buildAfimilkStorageEntries(storageData);[m
+[31m-        const weeklyAllTotals = this.buildAfimilkStorageWeeklyAllTotals(storageData);[m
+[31m-        if (!sorted.length) {[m
+[31m-          const first = storageData?.[0] ?? {};[m
+[31m-          const keys = Object.keys(first).slice(0, 30);[m
+[31m-          throw new Error(`No Storage rows with valid dates. First row keys: ${JSON.stringify(keys)}`);[m
+[31m-        }[m
+[31m-[m
+[31m-        const mm = String(sorted[0].date.getMonth() + 1).padStart(2, '0');[m
+[31m-        const yyyy = String(sorted[0].date.getFullYear());[m
+[31m-        const newStorageName = `Storage ${mm} ${yyyy}`;[m
+[31m-[m
+[31m-        const storageSheetEntry = sheets.find(s => String(s['@_name'] ?? '').toLowerCase().trim().startsWith('storage'));[m
+[31m-        if (!storageSheetEntry) throw new Error('Storage sheet not found in uploaded pricelist');[m
+[31m-        const oldStorageName = String(storageSheetEntry['@_name']);[m
+[31m-        storageSheetEntry['@_name'] = newStorageName;[m
+[31m-[m
+[31m-        const storageRelId = String(storageSheetEntry['@_r:id'] ?? '');[m
+[31m-        const storageSheetPath = await this.resolveWorksheetPathFromWorkbookRel(zip, parser, storageRelId);[m
+[31m-        if (!storageSheetPath) throw new Error('Could not resolve Storage worksheet XML path');[m
+[31m-[m
+[31m-        const storageXmlRaw = await zip.file(storageSheetPath)?.async('string');[m
+[31m-        if (!storageXmlRaw) throw new Error(`Missing Storage worksheet XML at ${storageSheetPath}`);[m
+[31m-        const storageObj: any = parser.parse(storageXmlRaw);[m
+[31m-        this.patchStorageWorksheetXml(storageObj, sharedStrings, sorted, weeklyAllTotals);[m
+[31m-        zip.file(storageSheetPath, builder.build(storageObj));[m
+[31m-[m
+[31m-        await this.replaceSheetNameInAllFormulas(zip, parser, builder, oldStorageName, newStorageName);[m
+[31m-      }[m
+[31m-[m
+       const inboundData = rawViewData ? this.findRawViewData(rawViewData, 'inbound') : null;[m
+       if (inboundData && inboundData.length) {[m
+         const inboundSheetEntry = sheets.find(s => String(s['@_name'] ?? '').toLowerCase().trim().includes('scans inbound'));[m
+[36m@@ -413,9 +390,26 @@[m [mexport class QTYFiller {[m
+             return anyFirstValue ? rows.slice(1) : rows;[m
+           })();[m
+ [m
+[31m-          const inboundPeriod = this.extractUniquePeriodFromRows(cleanedInboundData, 'Inbound at');[m
+[32m+[m[32m          const inboundRowsInExpectedPeriod = expectedInboundPeriod[m
+[32m+[m[32m            ? cleanedInboundData.filter(r => {[m
+[32m+[m[32m                const raw = this.getFieldValue(r, 'Inbound at');[m
+[32m+[m[32m                const dt = this.parseTableauDate(raw);[m
+[32m+[m[32m                if (!dt) return false;[m
+[32m+[m[32m                const mm = String(dt.getMonth() + 1).padStart(2, '0');[m
+[32m+[m[32m                const yyyy = String(dt.getFullYear());[m
+[32m+[m[32m                return mm === expectedInboundPeriod.mm && yyyy === expectedInboundPeriod.yyyy;[m
+[32m+[m[32m              })[m
+[32m+[m[32m            : cleanedInboundData;[m
+[32m+[m
+[32m+[m[32m          const inboundPeriod = this.extractUniquePeriodFromRows(inboundRowsInExpectedPeriod, 'Inbound at');[m
+           const oldInboundName = String(inboundSheetEntry['@_name'] ?? 'Scans Inbound');[m
+[31m-          if (inboundPeriod) {[m
+[32m+[m[32m          const shouldRenameInbound =[m
+[32m+[m[32m            !!expectedInboundPeriod &&[m
+[32m+[m[32m            !!inboundPeriod &&[m
+[32m+[m[32m            inboundPeriod.mm === expectedInboundPeriod.mm &&[m
+[32m+[m[32m            inboundPeriod.yyyy === expectedInboundPeriod.yyyy;[m
+[32m+[m
+[32m+[m[32m          if (shouldRenameInbound) {[m
+             inboundSheetEntry['@_name'] = `Scans Inbound ${inboundPeriod.mm}-${inboundPeriod.yyyy}`;[m
+             suggestedFilename = `Afimilk New-Zealand -Test Invoice ${inboundPeriod.mm}-${inboundPeriod.yyyy}.xlsx`;[m
+           }[m
+[36m@@ -426,7 +420,7 @@[m [mexport class QTYFiller {[m
+             const inboundXmlRaw = await zip.file(inboundSheetPath)?.async('string');[m
+             if (inboundXmlRaw) {[m
+               const inboundObj: any = parser.parse(inboundXmlRaw);[m
+[31m-              this.patchScansInboundWorksheetXml(inboundObj, sharedStrings, cleanedInboundData);[m
+[32m+[m[32m              this.patchScansInboundWorksheetXml(inboundObj, sharedStrings, inboundRowsInExpectedPeriod);[m
+               zip.file(inboundSheetPath, builder.build(inboundObj));[m
+             }[m
+           }[m
+[36m@@ -438,37 +432,6 @@[m [mexport class QTYFiller {[m
+         }[m
+       }[m
+ [m
+[31m-      const outboundData = rawViewData ? this.findRawViewData(rawViewData, 'outbound') : null;[m
+[31m-      if (outboundData && outboundData.length) {[m
+[31m-        const outboundSheetEntry = sheets.find(s => String(s['@_name'] ?? '').toLowerCase().trim().includes('scans outbound'));[m
+[31m-        if (outboundSheetEntry) {[m
+[31m-          const outboundPeriod = this.extractPeriodFromRows(outboundData, 'Shipped out');[m
+[31m-          const oldOutboundName = String(outboundSheetEntry['@_name'] ?? 'Scans Outbound');[m
+[31m-          if (outboundPeriod) {[m
+[31m-            outboundSheetEntry['@_name'] = `Scans Outbound ${outboundPeriod.mm}-${outboundPeriod.yyyy}`;[m
+[31m-          }[m
+[31m-[m
+[31m-          const outboundRelId = String(outboundSheetEntry['@_r:id'] ?? '');[m
+[31m-          const outboundSheetPath = await this.resolveWorksheetPathFromWorkbookRel(zip, parser, outboundRelId);[m
+[31m-          if (outboundSheetPath) {[m
+[31m-            const outboundXmlRaw = await zip.file(outboundSheetPath)?.async('string');[m
+[31m-            if (outboundXmlRaw) {[m
+[31m-              const outboundObj: any = parser.parse(outboundXmlRaw);[m
+[31m-              this.patchScansOutboundWorksheetXml(outboundObj, sharedStrings, outboundData);[m
+[31m-              zip.file(outboundSheetPath, builder.build(outboundObj));[m
+[31m-            }[m
+[31m-          }[m
+[31m-[m
+[31m-          const newOutboundName = String(outboundSheetEntry['@_name'] ?? oldOutboundName);[m
+[31m-          if (newOutboundName !== oldOutboundName) {[m
+[31m-            await this.replaceSheetNameInAllFormulas(zip, parser, builder, oldOutboundName, newOutboundName);[m
+[31m-          }[m
+[31m-        }[m
+[31m-      }[m
+[31m-[m
+[31m-      await this.addOrReplaceWorksheetOpenXml(zip, parser, builder, wbObj, 'Management', management);[m
+[31m-      await this.addOrReplaceWorksheetOpenXml(zip, parser, builder, wbObj, 'Analyze', analyzeRows);[m
+[31m-[m
+       // Patch invoice QTY cells without rewriting the workbook (preserve styles/formulas)[m
+       await this.patchInvoiceQtyOpenXml(zip, parser, builder, wbObj, templateStructure, quantities, filledRows, errors);[m
+ [m

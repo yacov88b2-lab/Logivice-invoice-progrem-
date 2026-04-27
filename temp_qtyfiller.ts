@@ -648,24 +648,20 @@ export class QTYFiller {
     if (inboundData.length > 0) {
       const headers = Object.keys(inboundData[0]);
       const refCol  = findCol(headers, ['Ref (Orders)', 'ref']);
-      const distinctCountIdCol = findCol(headers, ['Distinct count of Id', 'Billable Scan Logs']);
+      const typeCol = findCol(headers, ['Type (Billable', 'Type (Bil', 'type']);
 
       const distinctRefs = new Set<string>();
       let boxCount = 0;
       for (const row of inboundData) {
         if (refCol) distinctRefs.add(String(row[refCol] ?? ''));
-        // Sum "Distinct count of Id (Billable Scan Logs)" values for box count
-        if (distinctCountIdCol) {
-          const val = parseFloat(String(row[distinctCountIdCol] ?? '0')) || 0;
-          boxCount += val;
-        }
+        if (typeCol && String(row[typeCol] ?? '').toLowerCase().trim() === 'box') boxCount++;
       }
 
       // Match pricelist keys: segment=Inbound, clause=Per Order / Per Unit Scan
       // We match by segment+clause prefix and override — iterate quantities to find matching keys
       result.set('__sensos_inbound_orders', distinctRefs.size);
       result.set('__sensos_inbound_boxes', boxCount);
-      console.log(`[QTYFiller] Sensos Inbound: ${distinctRefs.size} orders, ${boxCount} boxes (summing Distinct count of Id)`);
+      console.log(`[QTYFiller] Sensos Inbound: ${distinctRefs.size} orders, ${boxCount} boxes`);
     }
 
     // --- Outbound ---
