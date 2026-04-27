@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"npm run server\" \"vite\"",
     "server": "tsx server/server.ts",
-    "start": "node dist/server/server.js",
+    "start": "tsx server/server.ts",
     "build": "tsc && vite build",
     "build:server": "tsc --project tsconfig.server.json",
     "preview": "vite preview",
