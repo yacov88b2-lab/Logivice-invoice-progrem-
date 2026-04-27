@@ -1444,6 +1444,11 @@ export class QTYFiller {
     if (!data.length) return;
 
     const headers = Object.keys(data[0]);
+    
+    // DEBUG: Log headers to diagnose Boxed count issue
+    console.log(`[QTYFiller] ${name} sheet headers:`, headers);
+    console.log(`[QTYFiller] ${name} first row sample:`, data[0]);
+    
     const rows = data.map(r => headers.map(h => r[h] ?? ''));
 
     // Build the sheet as AoA so we can append the summary table to the right
@@ -1456,7 +1461,12 @@ export class QTYFiller {
 
       const serviceLevelCol = findCol(['Service Level', 'service_name', 'Name (Service']);
       const refCol          = findCol(['Ref (Orders)', 'Ref(Orders)', 'ref']);
-      const boxCol          = findCol(['box']);
+      const distinctCountIdCol = findCol(['Distinct count of Id', 'Billable Scan Logs']);
+      
+      // DEBUG: Log which column was found
+      console.log(`[QTYFiller] ${name} - Service Level col:`, serviceLevelCol);
+      console.log(`[QTYFiller] ${name} - Ref col:`, refCol);
+      console.log(`[QTYFiller] ${name} - Distinct count of Id col:`, distinctCountIdCol);
 
       const startCol = headers.length + 1;
       let summaryHeader: string[];
@@ -1492,6 +1502,10 @@ export class QTYFiller {
           totalRefs  += refs.size;
           totalBoxes += boxes;
         }
+        
+        // DEBUG: Log Inbound totals
+        console.log(`[QTYFiller] Inbound - Total Refs: ${totalRefs}, Total Boxes: ${totalBoxes}`);
+        console.log(`[QTYFiller] Inbound - Summary rows:`, summaryDataRows);
 
       } else {
         // Outbound: group by Service Level + Dom/Int'l
@@ -1520,6 +1534,10 @@ export class QTYFiller {
           totalRefs  += refs.size;
           totalBoxes += boxes;
         }
+        
+        // DEBUG: Log Outbound totals
+        console.log(`[QTYFiller] Outbound - Total Refs: ${totalRefs}, Total Boxes: ${totalBoxes}`);
+        console.log(`[QTYFiller] Outbound - Summary rows:`, summaryDataRows);
       }
 
       // Write header row into aoa[0]
