@@ -2,7 +2,7 @@
 nixPkgs = ["python3", "gcc", "gnumake", "pkg-config"]
 
 [phases.build]
-cmds = ["npm install", "npm run build:server"]
+cmds = ["npm install"]
 
 [start]
-cmd = "node dist/server/server.js"
+cmd = "npx tsx server/server.ts"
