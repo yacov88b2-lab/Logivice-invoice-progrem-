@@ -18,3 +18,7 @@ services:
         value: logivice
       - key: TABLEAU_BASE_URL
         value: https://logivice.tableau.com
+    disk:
+      name: pricelists
+      mountPath: /app/uploads/pricelists
+      sizeGB: 1
