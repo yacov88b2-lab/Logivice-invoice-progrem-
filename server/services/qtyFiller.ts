@@ -770,6 +770,7 @@ export class QTYFiller {
     // For Sensos NL: override quantity map using raw view data (orders + boxes)
     if (rawViewData) {
       const sensosSummary = this.buildSensosQuantities(rawViewData);
+      console.log(`[QTYFiller] Sensos summary:`, Object.fromEntries(sensosSummary));
       // Map internal sensos keys to actual pricelist line item keys
       for (const sheet of templateStructure.sheets) {
         if (sheet.type !== 'invoice') continue;
@@ -778,6 +779,7 @@ export class QTYFiller {
           const clause = item.clause.toLowerCase();
           const cat    = item.category.toLowerCase();
           const key    = this.getLineItemKey(item);
+          console.log(`[QTYFiller] LineItem row=${item.row}: seg="${seg}" clause="${clause}" cat="${cat}" key="${key}"`);
           if (seg === 'inbound' && clause.includes('per order')) {
             quantities.set(key, sensosSummary.get('__sensos_inbound_orders') ?? 0);
           } else if (seg === 'inbound' && clause.includes('per unit scan') && (cat.includes('box') || cat.includes('per box'))) {
