@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
-const ExcelJS = _require('exceljs') as typeof import('exceljs');
+const ExcelJS = _require('exceljs') as any;
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -65,6 +65,17 @@ export class QTYFiller {
       const dd = Number(m[1]);
       const mm = Number(m[2]);
       const yyyy = Number(m[3]);
+      if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
+        const d = new Date(yyyy, mm - 1, dd);
+        return isNaN(d.getTime()) ? null : d;
+      }
+    }
+
+    const mdot = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+.*)?$/);
+    if (mdot) {
+      const dd = Number(mdot[1]);
+      const mm = Number(mdot[2]);
+      const yyyy = Number(mdot[3]);
       if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
         const d = new Date(yyyy, mm - 1, dd);
         return isNaN(d.getTime()) ? null : d;
@@ -177,7 +188,7 @@ export class QTYFiller {
     const maxClearRows = 5000;
     const maxWriteRows = Math.min(inboundRows.length, maxClearRows);
 
-    for (let r = 1; r <= maxClearRows; r++) {
+    for (let r = 2; r <= maxClearRows + 1; r++) {
       const row = findRow(r);
       if (!row) continue;
       for (const col of ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
@@ -187,7 +198,7 @@ export class QTYFiller {
     }
 
     for (let idx = 0; idx < maxWriteRows; idx++) {
-      const rowNum = idx + 1;
+      const rowNum = idx + 2;
       const templateRow = getOrCreateRow(rowNum);
 
       const bCell = getOrCreateCell(templateRow, 'B', rowNum);
@@ -332,17 +343,14 @@ export class QTYFiller {
     templateStructure: TemplateStructure,
     quantities: Map<string, number>,
     transactions?: Transaction[],
-    rawViewData?: Map<string, any[]>
+    rawViewData?: Map<string, any[]>,
+    expectedInboundPeriod?: { mm: string; yyyy: string } | null
   ): Promise<FillResult> {
     const filledRows: FillResult['filledRows'] = [];
     const errors: string[] = [];
     let suggestedFilename: string | undefined;
 
     try {
-      const storageData = rawViewData?.get('Storage') ?? [];
-      const management = rawViewData?.get('Management') || rawViewData?.get('Managment') || [];
-      const analyzeRows = this.buildAnalyzeRows(transactions ?? []);
-
       const zip = await JSZip.loadAsync(pricelistBuffer);
       const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
       const builder = new XMLBuilder({ ignoreAttributes: false, attributeNamePrefix: '@_', suppressEmptyNode: true });
@@ -364,37 +372,6 @@ export class QTYFiller {
       const sharedStringsXml = await zip.file('xl/sharedStrings.xml')?.async('string');
       const sharedStrings = sharedStringsXml ? this.parseSharedStrings(parser.parse(sharedStringsXml)) : [];
 
-      if (storageData.length) {
-        const sorted = this.buildAfimilkStorageEntries(storageData);
-        const weeklyAllTotals = this.buildAfimilkStorageWeeklyAllTotals(storageData);
-        if (!sorted.length) {
-          const first = storageData?.[0] ?? {};
-          const keys = Object.keys(first).slice(0, 30);
-          throw new Error(`No Storage rows with valid dates. First row keys: ${JSON.stringify(keys)}`);
-        }
-
-        const mm = String(sorted[0].date.getMonth() + 1).padStart(2, '0');
-        const yyyy = String(sorted[0].date.getFullYear());
-        const newStorageName = `Storage ${mm} ${yyyy}`;
-
-        const storageSheetEntry = sheets.find(s => String(s['@_name'] ?? '').toLowerCase().trim().startsWith('storage'));
-        if (!storageSheetEntry) throw new Error('Storage sheet not found in uploaded pricelist');
-        const oldStorageName = String(storageSheetEntry['@_name']);
-        storageSheetEntry['@_name'] = newStorageName;
-
-        const storageRelId = String(storageSheetEntry['@_r:id'] ?? '');
-        const storageSheetPath = await this.resolveWorksheetPathFromWorkbookRel(zip, parser, storageRelId);
-        if (!storageSheetPath) throw new Error('Could not resolve Storage worksheet XML path');
-
-        const storageXmlRaw = await zip.file(storageSheetPath)?.async('string');
-        if (!storageXmlRaw) throw new Error(`Missing Storage worksheet XML at ${storageSheetPath}`);
-        const storageObj: any = parser.parse(storageXmlRaw);
-        this.patchStorageWorksheetXml(storageObj, sharedStrings, sorted, weeklyAllTotals);
-        zip.file(storageSheetPath, builder.build(storageObj));
-
-        await this.replaceSheetNameInAllFormulas(zip, parser, builder, oldStorageName, newStorageName);
-      }
-
       const inboundData = rawViewData ? this.findRawViewData(rawViewData, 'inbound') : null;
       if (inboundData && inboundData.length) {
         const inboundSheetEntry = sheets.find(s => String(s['@_name'] ?? '').toLowerCase().trim().includes('scans inbound'));
@@ -413,9 +390,26 @@ export class QTYFiller {
             return anyFirstValue ? rows.slice(1) : rows;
           })();
 
-          const inboundPeriod = this.extractUniquePeriodFromRows(cleanedInboundData, 'Inbound at');
+          const inboundRowsInExpectedPeriod = expectedInboundPeriod
+            ? cleanedInboundData.filter(r => {
+                const raw = this.getFieldValue(r, 'Inbound at');
+                const dt = this.parseTableauDate(raw);
+                if (!dt) return false;
+                const mm = String(dt.getMonth() + 1).padStart(2, '0');
+                const yyyy = String(dt.getFullYear());
+                return mm === expectedInboundPeriod.mm && yyyy === expectedInboundPeriod.yyyy;
+              })
+            : cleanedInboundData;
+
+          const inboundPeriod = this.extractUniquePeriodFromRows(inboundRowsInExpectedPeriod, 'Inbound at');
           const oldInboundName = String(inboundSheetEntry['@_name'] ?? 'Scans Inbound');
-          if (inboundPeriod) {
+          const shouldRenameInbound =
+            !!expectedInboundPeriod &&
+            !!inboundPeriod &&
+            inboundPeriod.mm === expectedInboundPeriod.mm &&
+            inboundPeriod.yyyy === expectedInboundPeriod.yyyy;
+
+          if (shouldRenameInbound) {
             inboundSheetEntry['@_name'] = `Scans Inbound ${inboundPeriod.mm}-${inboundPeriod.yyyy}`;
             suggestedFilename = `Afimilk New-Zealand -Test Invoice ${inboundPeriod.mm}-${inboundPeriod.yyyy}.xlsx`;
           }
@@ -426,7 +420,7 @@ export class QTYFiller {
             const inboundXmlRaw = await zip.file(inboundSheetPath)?.async('string');
             if (inboundXmlRaw) {
               const inboundObj: any = parser.parse(inboundXmlRaw);
-              this.patchScansInboundWorksheetXml(inboundObj, sharedStrings, cleanedInboundData);
+              this.patchScansInboundWorksheetXml(inboundObj, sharedStrings, inboundRowsInExpectedPeriod);
               zip.file(inboundSheetPath, builder.build(inboundObj));
             }
           }
@@ -437,37 +431,6 @@ export class QTYFiller {
           }
         }
       }
-
-      const outboundData = rawViewData ? this.findRawViewData(rawViewData, 'outbound') : null;
-      if (outboundData && outboundData.length) {
-        const outboundSheetEntry = sheets.find(s => String(s['@_name'] ?? '').toLowerCase().trim().includes('scans outbound'));
-        if (outboundSheetEntry) {
-          const outboundPeriod = this.extractPeriodFromRows(outboundData, 'Shipped out');
-          const oldOutboundName = String(outboundSheetEntry['@_name'] ?? 'Scans Outbound');
-          if (outboundPeriod) {
-            outboundSheetEntry['@_name'] = `Scans Outbound ${outboundPeriod.mm}-${outboundPeriod.yyyy}`;
-          }
-
-          const outboundRelId = String(outboundSheetEntry['@_r:id'] ?? '');
-          const outboundSheetPath = await this.resolveWorksheetPathFromWorkbookRel(zip, parser, outboundRelId);
-          if (outboundSheetPath) {
-            const outboundXmlRaw = await zip.file(outboundSheetPath)?.async('string');
-            if (outboundXmlRaw) {
-              const outboundObj: any = parser.parse(outboundXmlRaw);
-              this.patchScansOutboundWorksheetXml(outboundObj, sharedStrings, outboundData);
-              zip.file(outboundSheetPath, builder.build(outboundObj));
-            }
-          }
-
-          const newOutboundName = String(outboundSheetEntry['@_name'] ?? oldOutboundName);
-          if (newOutboundName !== oldOutboundName) {
-            await this.replaceSheetNameInAllFormulas(zip, parser, builder, oldOutboundName, newOutboundName);
-          }
-        }
-      }
-
-      await this.addOrReplaceWorksheetOpenXml(zip, parser, builder, wbObj, 'Management', management);
-      await this.addOrReplaceWorksheetOpenXml(zip, parser, builder, wbObj, 'Analyze', analyzeRows);
 
       // Patch invoice QTY cells without rewriting the workbook (preserve styles/formulas)
       await this.patchInvoiceQtyOpenXml(zip, parser, builder, wbObj, templateStructure, quantities, filledRows, errors);

@@ -8,6 +8,40 @@ echo ============================================
 echo Logivice Invoice Processor - Start Here
 echo ============================================
 
+echo.
+echo Choose mode:
+echo   [1] Local: runs dev server + opens localhost
+echo   [2] Staging: opens staging URL
+echo   [3] Production: opens production URL
+echo.
+set /p MODE=Enter 1, 2, or 3 then press Enter: 
+
+if "%MODE%"=="2" (
+  echo.
+  echo Opening staging: https://logivice-staging.netlify.app/
+  start "" "https://logivice-staging.netlify.app/"
+  echo.
+  pause
+  exit /b 0
+)
+
+if "%MODE%"=="3" (
+  echo.
+  echo Opening production: https://logivice.netlify.app/
+  start "" "https://logivice.netlify.app/"
+  echo.
+  pause
+  exit /b 0
+)
+
+if not "%MODE%"=="1" (
+  echo.
+  echo Invalid choice. Please run again and choose 1, 2, or 3.
+  echo.
+  pause
+  exit /b 1
+)
+
 where npm >nul 2>nul
 if errorlevel 1 (
   echo.

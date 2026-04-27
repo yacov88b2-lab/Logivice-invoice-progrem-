@@ -373,25 +373,47 @@ export class TableauAPIClient {
     
     return data.filter(row => {
       // Find date column - check various common names
-      const dateValue = row['created_at'] || 
-                       row['Created At'] || 
-                       row['Day of Created At'] ||
-                       row['Day of Created At (Stats)'] ||
-                       row['Month of Created At'] ||
-                       row['Month of Created At (Orders)'] ||
-                       row['Weeks'] || // Storage view week format
-                       row['Week'] ||
-                       row['Inbound at'] || // Afimilk NZ Inbound view
-                       row['Shipped out'] || // Afimilk NZ Outbound view
-                       row['Inbound At'] ||
-                       row['shipped_out'];
+      const dateKey =
+        (row['created_at'] !== undefined ? 'created_at' : null) ||
+        (row['Created At'] !== undefined ? 'Created At' : null) ||
+        (row['Day of Created At'] !== undefined ? 'Day of Created At' : null) ||
+        (row['Day of Created At (Stats)'] !== undefined ? 'Day of Created At (Stats)' : null) ||
+        (row['Month of Created At'] !== undefined ? 'Month of Created At' : null) ||
+        (row['Month of Created At (Orders)'] !== undefined ? 'Month of Created At (Orders)' : null) ||
+        (row['Weeks'] !== undefined ? 'Weeks' : null) ||
+        (row['Week'] !== undefined ? 'Week' : null) ||
+        (row['Inbound at'] !== undefined ? 'Inbound at' : null) ||
+        (row['Shipped out'] !== undefined ? 'Shipped out' : null) ||
+        (row['Inbound At'] !== undefined ? 'Inbound At' : null) ||
+        (row['shipped_out'] !== undefined ? 'shipped_out' : null);
+
+      const dateValue = dateKey ? row[dateKey] : undefined;
       
       if (!dateValue) {
         console.log('[Tableau] No date value found in row, keeping row. Available keys:', Object.keys(row).join(', '));
         return true; // Keep rows without dates (can't filter)
       }
       
-      const rowDate = this.parseDateValue(dateValue);
+      const parseDmySlash = (v: any): Date | null => {
+        if (!v) return null;
+        const s = String(v).trim();
+        const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+.*)?$/);
+        if (!m) return null;
+        const dd = parseInt(m[1], 10);
+        const mm = parseInt(m[2], 10);
+        const yyyy = parseInt(m[3], 10);
+        if (!(dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12)) return null;
+        const d = new Date(yyyy, mm - 1, dd);
+        return isNaN(d.getTime()) ? null : d;
+      };
+
+      const rowDate =
+        dateKey === 'Inbound at' ||
+        dateKey === 'Inbound At' ||
+        dateKey === 'Shipped out' ||
+        dateKey === 'shipped_out'
+          ? (parseDmySlash(dateValue) ?? this.parseDateValue(dateValue))
+          : this.parseDateValue(dateValue);
       if (!rowDate || isNaN(rowDate.getTime())) {
         console.log('[Tableau] Could not parse date value:', dateValue, 'keeping row');
         return true; // Keep rows with invalid dates
