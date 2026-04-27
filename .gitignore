@@ -22,10 +22,6 @@ data/
 *.sqlite
 *.sqlite3
 *.db
-*.sqlite-wal
-*.sqlite-shm
-*.db-wal
-*.db-shm
 
 # Uploads
 uploads/

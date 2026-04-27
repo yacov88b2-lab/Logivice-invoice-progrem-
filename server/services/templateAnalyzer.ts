@@ -28,7 +28,13 @@ export class TemplateAnalyzer {
         const row = jsonData[i];
         if (row && row.length > 0) {
           const rowStr = row.join(' ').toLowerCase();
+          // Standard format: has 'segment' column label
           if (rowStr.includes('segment') && rowStr.includes('rate') && rowStr.includes('qty')) {
+            detectedHeaderRow = i;
+            break;
+          }
+          // Sensos NL format: header has clause+rate+qty but segment is the value in col 0
+          if (rowStr.includes('clause') && rowStr.includes('rate') && rowStr.includes('qty')) {
             detectedHeaderRow = i;
             break;
           }
@@ -37,6 +43,18 @@ export class TemplateAnalyzer {
 
       if (detectedHeaderRow === -1) continue;
       headerRow = detectedHeaderRow;
+
+      // Reset columns to defaults for each sheet
+      columns = {
+        segment: 0,
+        clause: 1,
+        category: 2,
+        unitOfMeasure: 3,
+        remark: 4,
+        rate: 5,
+        qty: 6,
+        total: 7
+      };
 
       // Detect column positions
       const headerRowData = jsonData[headerRow];
@@ -54,12 +72,23 @@ export class TemplateAnalyzer {
 
       // Extract line items
       const lineItems: LineItem[] = [];
+      let lastSegment = '';
       for (let i = headerRow + 1; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || row.length === 0) continue;
         
-        const segment = row[columns.segment];
-        if (!segment) continue; // Skip empty rows
+        const segmentRaw = row[columns.segment];
+        // Carry forward the last known segment if current row has no segment value
+        // but has a clause/rate (data rows that belong to the previous segment block)
+        if (segmentRaw) {
+          lastSegment = String(segmentRaw);
+        }
+        const segment = lastSegment;
+        if (!segment) continue; // Skip rows before any segment is seen
+        // Skip rows that are just segment headers (no clause/rate)
+        const hasClause = row[columns.clause] !== undefined && row[columns.clause] !== null && row[columns.clause] !== '';
+        const hasRate = row[columns.rate] !== undefined && row[columns.rate] !== null && row[columns.rate] !== '';
+        if (!hasClause && !hasRate) continue;
 
         lineItems.push({
           row: i + 1, // 1-based row number
@@ -98,9 +127,15 @@ export class TemplateAnalyzer {
     if (invoiceKeywords.some(kw => lowerName.includes(kw))) {
       return 'invoice';
     }
+
+    // Month/year pattern (e.g. "March 2026", "April 2026") — Sensos NL main invoice sheet
+    const monthPattern = /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}$/i;
+    if (monthPattern.test(name.trim())) {
+      return 'invoice';
+    }
     
-    // If it has typical invoice columns (rate, qty, total), it's likely an invoice
-    if (items.length > 0 && items[0].rate !== undefined) {
+    // If it has line items with rates, it's likely an invoice sheet
+    if (items.length > 0 && items.some(item => item.rate > 0)) {
       return 'invoice';
     }
     

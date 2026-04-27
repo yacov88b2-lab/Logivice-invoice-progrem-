@@ -1,19 +1,20 @@
+# Render.com deployment configuration
 services:
   - type: web
     name: logivice-api
     runtime: node
     buildCommand: npm install && npm run build
-    startCommand: npm start
+    startCommand: node dist/server/server.js
     envVars:
-      - key: NODE_VERSION
-        value: 20
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
       - key: TABLEAU_TOKEN_NAME
-        sync: false
+        sync: false  # Set manually in Render dashboard
       - key: TABLEAU_TOKEN_VALUE
-        sync: false
-      - key: TABLEAU_SERVER
-        sync: false
+        sync: false  # Set manually in Render dashboard
       - key: TABLEAU_SITE
-        sync: false
-      - key: ADMIN_PASSWORD
-        generateValue: true
+        value: logivice
+      - key: TABLEAU_BASE_URL
+        value: https://logivice.tableau.com
