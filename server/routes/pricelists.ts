@@ -3,8 +3,9 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import db from '../db';
-import { PricelistModel } from '../models/Pricelist';
-import { TemplateAnalyzer } from '../services/templateAnalyzer';
+import { PricelistModel } from '../models/Pricelist.js';
+import { TemplateAnalyzer } from '../services/templateAnalyzer.js';
+import { pricelistStorage } from '../services/pricelistStorage.js';
 
 const router = express.Router();
 
@@ -69,34 +70,45 @@ router.post('/', upload.single('file'), async (req, res) => {
     const warehouse_code = req.body.warehouse_code as string;
     
     if (!name || !customer_name || !warehouse_code) {
-      fs.unlinkSync(req.file.path);
+      // Clean up temp file
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Analyze the uploaded file
-    const buffer = fs.readFileSync(req.file.path);
-    const templateStructure = TemplateAnalyzer.analyze(buffer);
+    try {
+      // Read file buffer
+      const buffer = fs.readFileSync(req.file.path);
+      
+      // Analyze the uploaded file
+      const templateStructure = TemplateAnalyzer.analyze(buffer);
+      
+      // Store file in SharePoint or local storage
+      const fileName = req.file.originalname || `${Date.now()}_${name}.xlsx`;
+      const { storagePath, isSharePoint } = await pricelistStorage.storeFile(fileName, buffer);
+      
+      console.log(`[PricelistRoutes] Stored pricelist in ${isSharePoint ? 'SharePoint' : 'local storage'}: ${storagePath}`);
 
-    const pricelist = PricelistModel.create({
-      name,
-      customer_name,
-      warehouse_code,
-      file_path: req.file.path,
-      template_structure: templateStructure
-    });
+      const pricelist = PricelistModel.create({
+        name,
+        customer_name,
+        warehouse_code,
+        file_path: storagePath,
+        template_structure: templateStructure
+      });
 
-    res.status(201).json(pricelist);
+      res.status(201).json(pricelist);
+    } finally {
+      // Clean up temp file
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+    }
   } catch (error) {
     console.error('Error creating pricelist:', error);
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
     res.status(500).json({ error: 'Failed to create pricelist', details: (error as Error).message });
   }
 });
 
 // Update pricelist
-router.put('/:id', upload.single('file'), (req, res) => {
+router.put('/:id', upload.single('file'), async (req, res) => {
   try {
     const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
     const name = req.body.name as string;
@@ -109,40 +121,45 @@ router.put('/:id', upload.single('file'), (req, res) => {
     if (warehouse_code) updateData.warehouse_code = warehouse_code;
     
     if (req.file) {
-      // Get old pricelist to delete old file
-      const oldPricelist = PricelistModel.getById(id);
-      if (oldPricelist && fs.existsSync(oldPricelist.file_path)) {
-        fs.unlinkSync(oldPricelist.file_path);
+      try {
+        // Read file buffer
+        const buffer = fs.readFileSync(req.file.path);
+        
+        // Delete old file from SharePoint/local storage
+        const oldPricelist = PricelistModel.getById(id);
+        if (oldPricelist) {
+          await pricelistStorage.deleteFile(oldPricelist.file_path);
+        }
+        
+        // Store new file in SharePoint or local storage
+        const fileName = req.file.originalname || `${Date.now()}_${name || 'pricelist'}.xlsx`;
+        const { storagePath, isSharePoint } = await pricelistStorage.storeFile(fileName, buffer);
+        
+        console.log(`[PricelistRoutes] Updated pricelist stored in ${isSharePoint ? 'SharePoint' : 'local storage'}: ${storagePath}`);
+        
+        updateData.file_path = storagePath;
+        updateData.template_structure = TemplateAnalyzer.analyze(buffer);
+      } finally {
+        // Clean up temp file
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
       }
-      
-      updateData.file_path = req.file.path;
-      
-      // Re-analyze the file
-      const buffer = fs.readFileSync(req.file.path);
-      updateData.template_structure = TemplateAnalyzer.analyze(buffer);
     }
     
     const pricelist = PricelistModel.update(id, updateData);
     
     if (!pricelist) {
-      if (req.file) {
-        fs.unlinkSync(req.file.path);
-      }
       return res.status(404).json({ error: 'Pricelist not found' });
     }
     
     res.json(pricelist);
   } catch (error) {
     console.error('Error updating pricelist:', error);
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
     res.status(500).json({ error: 'Failed to update pricelist', details: (error as Error).message });
   }
 });
 
 // Delete pricelist
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const pricelist = PricelistModel.getById(id);
@@ -153,16 +170,11 @@ router.delete('/:id', (req, res) => {
 
     db.prepare('DELETE FROM audit_logs WHERE pricelist_id = ?').run(id);
     
-    // Delete the file
-    if (fs.existsSync(pricelist.file_path)) {
-      try {
-        fs.unlinkSync(pricelist.file_path);
-      } catch (e) {
-        const err = e instanceof Error ? e : new Error(String(e));
-        return res.status(500).json({
-          error: `Failed to delete pricelist file. Close the Excel file if it is open and try again. Details: ${err.message}`
-        });
-      }
+    // Delete the file from SharePoint or local storage
+    try {
+      await pricelistStorage.deleteFile(pricelist.file_path);
+    } catch (e) {
+      console.warn('[PricelistRoutes] Failed to delete file, continuing:', e);
     }
     
     const success = PricelistModel.delete(id);
@@ -175,13 +187,12 @@ router.delete('/:id', (req, res) => {
   } catch (error) {
     console.error('Error deleting pricelist:', error);
     const err = error instanceof Error ? error : new Error(String(error));
-    console.error('Error deleting pricelist:', err);
     res.status(500).json({ error: `Failed to delete pricelist. Details: ${err.message}` });
   }
 });
 
 // Download pricelist file
-router.get('/:id/download', (req, res) => {
+router.get('/:id/download', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const pricelist = PricelistModel.getById(id);
@@ -190,11 +201,22 @@ router.get('/:id/download', (req, res) => {
       return res.status(404).json({ error: 'Pricelist not found' });
     }
     
-    if (!fs.existsSync(pricelist.file_path)) {
+    // Check if file exists (SharePoint or local)
+    const exists = await pricelistStorage.fileExists(pricelist.file_path);
+    if (!exists) {
       return res.status(404).json({ error: 'File not found' });
     }
     
-    res.download(pricelist.file_path);
+    // Retrieve file from SharePoint or local storage
+    const buffer = await pricelistStorage.retrieveFile(pricelist.file_path);
+    
+    // Extract filename for download
+    const fileName = pricelist.file_path.split('/').pop() || `${pricelist.name}.xlsx`;
+    
+    // Send file
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
   } catch (error) {
     console.error('Error downloading file:', error);
     res.status(500).json({ error: 'Failed to download file', details: (error as Error).message });

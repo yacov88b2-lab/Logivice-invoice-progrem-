@@ -8,6 +8,7 @@ import { TableauAPIClient } from '../../services/tableauAPI';
 import { ExcelDataExtractor } from '../../services/excelDataExtractor';
 import { DataMapper } from '../../services/dataMapper';
 import { QTYFiller } from '../../services/qtyFiller';
+import { pricelistStorage } from '../../services/pricelistStorage';
 
 const router = express.Router();
 
@@ -27,11 +28,14 @@ router.post('/export-total', async (req, res) => {
       return res.status(404).json({ error: 'Pricelist not found' });
     }
 
-    if (!fs.existsSync(pricelist.file_path)) {
+    // Check if file exists (SharePoint or local)
+    const fileExists = await pricelistStorage.fileExists(pricelist.file_path);
+    if (!fileExists) {
       return res.status(404).json({ error: 'Pricelist file not found' });
     }
 
-    const pricelistBuffer = fs.readFileSync(pricelist.file_path);
+    // Retrieve pricelist file from SharePoint or local storage
+    const pricelistBuffer = await pricelistStorage.retrieveFile(pricelist.file_path);
 
     const tableauClient = new TableauAPIClient();
     const { transactions, rawViewData } = await tableauClient.fetchTransactionsWithRawData(
@@ -146,13 +150,14 @@ router.post('/invoice', async (req, res) => {
       return res.status(404).json({ error: 'Pricelist not found' });
     }
 
-    // Check if file exists
-    if (!fs.existsSync(pricelist.file_path)) {
+    // Check if file exists (SharePoint or local)
+    const fileExists = await pricelistStorage.fileExists(pricelist.file_path);
+    if (!fileExists) {
       return res.status(404).json({ error: 'Pricelist file not found' });
     }
 
-    // Read pricelist file
-    const pricelistBuffer = fs.readFileSync(pricelist.file_path);
+    // Retrieve pricelist file from SharePoint or local storage
+    const pricelistBuffer = await pricelistStorage.retrieveFile(pricelist.file_path);
 
     const isAfimilkBilling = String(pricelist.customer_name || '').toLowerCase().includes('afimilk');
 
@@ -339,8 +344,8 @@ router.post('/preview', async (req, res) => {
       return res.status(404).json({ error: 'Pricelist not found' });
     }
 
-    // Read pricelist file
-    const pricelistBuffer = fs.readFileSync(pricelist.file_path);
+    // Retrieve pricelist file from SharePoint or local storage
+    const pricelistBuffer = await pricelistStorage.retrieveFile(pricelist.file_path);
 
     // Get transactions from Excel file (like generate endpoint)
     let transactions = ExcelDataExtractor.extractFromAnalyzeSheet(pricelistBuffer);
