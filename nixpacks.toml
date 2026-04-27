@@ -1,11 +1,8 @@
 [phases.setup]
 nixPkgs = ["python3", "gcc", "gnumake", "pkg-config"]
 
-[variables]
-NODE_ENV = "development"
-
 [phases.build]
 cmds = ["npm install --include=dev"]
 
 [start]
-cmd = "npx tsx server/server.ts"
+cmd = "node node_modules/.bin/tsx server/server.ts"
