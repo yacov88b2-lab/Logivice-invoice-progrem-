@@ -606,54 +606,46 @@ export class TableauAPIClient {
       }
       console.log(`Found ${workbooks.length} workbook(s):`, workbooks.map((w: any) => w.name));
 
-      // Step 4: Get views from first matching workbook
-      const targetWorkbook = workbooks[0];
-      const views = await this.getWorkbookViews(targetWorkbook.id);
-      if (views.length === 0) {
-        console.log('No views found, using mock data');
-        return { 
-          transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
-          rawViewData 
-        };
-      }
-      console.log(`Found ${views.length} views:`, views.map((v: any) => v.name));
-
-      // Step 5: Query each view for data
+      // Step 4: Get views from ALL matching workbooks
       const allTransactions: Transaction[] = [];
       
-      // Date filters - use lowercase created_at to match the actual field name
-      const dateFilters = {
-        'created_at': `${startDate}:${endDate}`
-      };
+      for (const targetWorkbook of workbooks) {
+        const views = await this.getWorkbookViews(targetWorkbook.id);
+        if (views.length === 0) continue;
+        console.log(`[Tableau] Workbook '${targetWorkbook.name}' has ${views.length} views:`, views.map((v: any) => v.name));
 
-      console.log(`[Tableau] Date filters: ${JSON.stringify(dateFilters)}`);
-
-      for (const view of views) {
-        const segment = this.mapViewNameToSegment(view.name);
-        console.log(`[Tableau] View '${view.name}' mapped to segment: ${segment || 'SKIPPED'}`);
-        
-        // Debug: Query available filters for this view
-        const availableFilters = await this.getViewFilters(view.id);
-        if (availableFilters.length > 0) {
-          console.log(`[Tableau] Available filters for '${view.name}':`, availableFilters.map((f: any) => f.name).join(', '));
-        }
-        
-        const viewData = await this.queryViewData(view.id, {}, {start: startDate, end: endDate});
-        
-        if (viewData && viewData.data) {
-          // Store RAW (unfiltered) data for Excel sheets — use all rows regardless of date filter
-          // Trim view name to avoid trailing space mismatches (e.g. "Inbound " vs "Inbound")
-          rawViewData.set(view.name.trim(), viewData.rawData || viewData.data);
+        // Step 5: Query each view for data
+        for (const view of views) {
+          const segment = this.mapViewNameToSegment(view.name);
+          console.log(`[Tableau] View '${view.name}' mapped to segment: ${segment || 'SKIPPED'}`);
           
-          if (segment) {
-            const transactions = this.transformTableauData(
-              viewData.data, 
-              segment,
-              customer || 'Unknown', 
-              warehouse || 'Default'
-            );
-            allTransactions.push(...transactions);
-            console.log(`View '${view.name}': ${transactions.length} transactions`);
+          // Debug: Query available filters for this view
+          const availableFilters = await this.getViewFilters(view.id);
+          if (availableFilters.length > 0) {
+            console.log(`[Tableau] Available filters for '${view.name}':`, availableFilters.map((f: any) => f.name).join(', '));
+          }
+          
+          const viewData = await this.queryViewData(view.id, {}, {start: startDate, end: endDate});
+          
+          if (viewData && viewData.data) {
+            // Store RAW (unfiltered) data for Excel sheets — use all rows regardless of date filter
+            // Trim view name to avoid trailing space mismatches (e.g. "Inbound " vs "Inbound")
+            const viewKey = view.name.trim();
+            // Don't overwrite if we already have data for this view from a previous workbook
+            if (!rawViewData.has(viewKey)) {
+              rawViewData.set(viewKey, viewData.rawData || viewData.data);
+            }
+            
+            if (segment) {
+              const transactions = this.transformTableauData(
+                viewData.data, 
+                segment,
+                customer || 'Unknown', 
+                warehouse || 'Default'
+              );
+              allTransactions.push(...transactions);
+              console.log(`View '${view.name}': ${transactions.length} transactions`);
+            }
           }
         }
       }
