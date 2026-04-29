@@ -164,6 +164,7 @@ router.post('/invoice', async (req, res) => {
     // Get transactions - either from Excel file or Tableau API
     let transactions;
     let rawViewData = new Map<string, any[]>();
+    let filteredViewData = new Map<string, any[]>();
     
     if (use_excel_data && !isAfimilkBilling) {
       // First try to extract from the uploaded Excel file itself (Analyze sheet)
@@ -181,6 +182,7 @@ router.post('/invoice', async (req, res) => {
         );
         transactions = result.transactions;
         rawViewData = result.rawViewData;
+        filteredViewData = result.filteredViewData;
       } else {
         console.log(`Using ${transactions.length} transactions from Excel file`);
         // Enrich with customer/warehouse info from pricelist
@@ -201,6 +203,7 @@ router.post('/invoice', async (req, res) => {
       );
       transactions = result.transactions;
       rawViewData = result.rawViewData;
+      filteredViewData = result.filteredViewData;
     }
 
     // Map transactions to line items
@@ -220,7 +223,8 @@ router.post('/invoice', async (req, res) => {
     });
 
     // Prepare output path
-    const outputDir = path.join(process.cwd(), 'uploads', 'generated');
+    const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(process.cwd(), 'data');
+    const outputDir = path.join(dataDir, 'uploads', 'generated');
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
@@ -257,7 +261,8 @@ router.post('/invoice', async (req, res) => {
           quantityMap,
           outputPath,
           transactions,
-          rawViewData // Pass raw Tableau view data for exact column matching
+          rawViewData,
+          filteredViewData
         );
 
     const billingPeriod = isAfimilkBilling

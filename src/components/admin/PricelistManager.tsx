@@ -32,15 +32,41 @@ export function PricelistManager() {
   const checkDeployStatus = async () => {
     try {
       const response = await fetch(`${API_BASE}/deploy/status`);
+      if (!response.ok) {
+        setDeployStatus(prev => ({
+          ...prev,
+          canDeploy: false,
+          commitsBehind: 0,
+          pendingCommits: []
+        }));
+        return;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        setDeployStatus(prev => ({
+          ...prev,
+          canDeploy: false,
+          commitsBehind: 0,
+          pendingCommits: []
+        }));
+        return;
+      }
+
       const data = await response.json();
       setDeployStatus(prev => ({
         ...prev,
-        canDeploy: data.canDeploy,
-        commitsBehind: data.commitsBehind,
+        canDeploy: Boolean(data?.canDeploy),
+        commitsBehind: Number(data?.commitsBehind || 0),
         pendingCommits: data.pendingCommits || []
       }));
-    } catch (error) {
-      console.error('Failed to check deploy status:', error);
+    } catch {
+      setDeployStatus(prev => ({
+        ...prev,
+        canDeploy: false,
+        commitsBehind: 0,
+        pendingCommits: []
+      }));
     }
   };
 

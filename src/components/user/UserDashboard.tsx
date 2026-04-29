@@ -97,7 +97,8 @@ export function UserDashboard() {
       setResult(data);
       setStep('result');
     } catch (err) {
-      setError('Failed to generate invoice. Please try again.');
+      const message = err instanceof Error ? err.message : 'Failed to generate invoice. Please try again.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -171,26 +172,7 @@ export function UserDashboard() {
         const safeCustomer = String(selectedCustomer || preview?.pricelist?.name || 'Customer').trim();
         const downloadName = `${safeCustomer} Total transaction matched and unmatched ${timestamp}.xlsx`;
 
-        const res = await fetch('http://localhost:3001/api/generate/export-total', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pricelist_id: Number(selectedPricelist),
-            start_date: startDate,
-            end_date: endDate
-          })
-        });
-
-        if (!res.ok) {
-          let msg = 'Failed to export total. Please try again.';
-          try {
-            const data = await res.json();
-            if (data?.error) msg = String(data.error);
-          } catch {
-            // ignore
-          }
-          throw new Error(msg);
-        }
+        const res = await api.exportTotal(Number(selectedPricelist), startDate, endDate);
 
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);

@@ -850,14 +850,22 @@ export class QTYFiller {
     quantities: Map<string, number>,
     outputPath: string,
     transactions?: Transaction[],
-    rawViewData?: Map<string, any[]>
+    rawViewData?: Map<string, any[]>,
+    filteredViewData?: Map<string, any[]>
   ): Promise<FillResult> {
     const filledRows: FillResult['filledRows'] = [];
     const errors: string[] = [];
 
     // For Sensos NL: override quantity map using raw view data (orders + boxes)
-    if (rawViewData) {
-      const sensosSummary = this.buildSensosQuantities(rawViewData);
+    const quantityViewData = filteredViewData ?? rawViewData;
+    if (quantityViewData) {
+      const quantitySource = filteredViewData ? 'filteredViewData' : 'rawViewData';
+      console.log(`[QTYFiller] Sensos calculation source: ${quantitySource}`);
+      console.log(
+        '[QTYFiller] Sensos calculation view rows:',
+        Array.from(quantityViewData.entries()).map(([k, v]) => `${k}(${Array.isArray(v) ? v.length : 0})`).join(', ')
+      );
+      const sensosSummary = this.buildSensosQuantities(quantityViewData);
       console.log(`[QTYFiller] Sensos summary:`, Object.fromEntries(sensosSummary));
       // Map internal sensos keys to actual pricelist line item keys
       for (const sheet of templateStructure.sheets) {

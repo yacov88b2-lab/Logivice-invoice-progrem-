@@ -1,7 +1,7 @@
 import type { Transaction } from '../types';
 
 // Tableau API Configuration - loaded from environment variables
-const TABLEAU_BASE_URL = process.env.TABLEAU_SERVER || 'https://dub01.online.tableau.com';
+const TABLEAU_BASE_URL = process.env.TABLEAU_BASE_URL || 'https://dub01.online.tableau.com';
 const TABLEAU_TOKEN_NAME = process.env.TABLEAU_TOKEN_NAME || '';
 const TABLEAU_TOKEN_SECRET = process.env.TABLEAU_TOKEN_VALUE || '';
 const TABLEAU_SITE = process.env.TABLEAU_SITE || 'logivice';
@@ -372,10 +372,27 @@ export class TableauAPIClient {
     end.setHours(23, 59, 59, 999); // Include full end day
     
     return data.filter(row => {
+      const splitMonthKey =
+        (row['Month of Created At (Orders)'] !== undefined ? 'Month of Created At (Orders)' : null) ||
+        (row['Month of Created At'] !== undefined ? 'Month of Created At' : null);
+      const splitYearKey =
+        (row['Year of Created At (Orders)'] !== undefined ? 'Year of Created At (Orders)' : null) ||
+        (row['Year of Created At'] !== undefined ? 'Year of Created At' : null);
+
+      if (splitMonthKey && splitYearKey) {
+        const rowDate = this.parseDateValue(`${row[splitMonthKey]} ${row[splitYearKey]}`);
+        if (!rowDate || isNaN(rowDate.getTime())) {
+          console.log('[Tableau] Could not parse split month/year values:', row[splitMonthKey], row[splitYearKey], 'keeping row');
+          return true;
+        }
+        return rowDate >= start && rowDate <= end;
+      }
+
       // Find date column - check various common names
       const dateKey =
         (row['created_at'] !== undefined ? 'created_at' : null) ||
         (row['Created At'] !== undefined ? 'Created At' : null) ||
+        (row['Created At (Billable Scan Logs)'] !== undefined ? 'Created At (Billable Scan Logs)' : null) ||
         (row['Day of Created At'] !== undefined ? 'Day of Created At' : null) ||
         (row['Day of Created At (Stats)'] !== undefined ? 'Day of Created At (Stats)' : null) ||
         (row['Month of Created At'] !== undefined ? 'Month of Created At' : null) ||
@@ -390,6 +407,10 @@ export class TableauAPIClient {
       const dateValue = dateKey ? row[dateKey] : undefined;
       
       if (!dateValue) {
+        const refDate = this.parseDateFromOrderRef(row['Ref (Orders)'] ?? row['Order Number']);
+        if (refDate && !isNaN(refDate.getTime())) {
+          return refDate >= start && refDate <= end;
+        }
         console.log('[Tableau] No date value found in row, keeping row. Available keys:', Object.keys(row).join(', '));
         return true; // Keep rows without dates (can't filter)
       }
@@ -411,7 +432,8 @@ export class TableauAPIClient {
         dateKey === 'Inbound at' ||
         dateKey === 'Inbound At' ||
         dateKey === 'Shipped out' ||
-        dateKey === 'shipped_out'
+        dateKey === 'shipped_out' ||
+        dateKey === 'Created At (Billable Scan Logs)'
           ? (parseDmySlash(dateValue) ?? this.parseDateValue(dateValue))
           : this.parseDateValue(dateValue);
       if (!rowDate || isNaN(rowDate.getTime())) {
@@ -429,6 +451,31 @@ export class TableauAPIClient {
     return new Date(year, month - 1, day); // month is 0-indexed in JS Date
   }
 
+  private parseDateFromOrderRef(refValue: any): Date | null {
+    if (!refValue) return null;
+    const ref = String(refValue).trim();
+
+    const eightDigitMatch = ref.match(/(\d{2})(\d{2})(\d{4})$/);
+    if (eightDigitMatch) {
+      const day = parseInt(eightDigitMatch[1], 10);
+      const month = parseInt(eightDigitMatch[2], 10) - 1;
+      const year = parseInt(eightDigitMatch[3], 10);
+      const parsed = new Date(year, month, day);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const sixDigitMatch = ref.match(/(\d{2})(\d{2})(\d{2})$/);
+    if (sixDigitMatch) {
+      const day = parseInt(sixDigitMatch[1], 10);
+      const month = parseInt(sixDigitMatch[2], 10) - 1;
+      const year = 2000 + parseInt(sixDigitMatch[3], 10);
+      const parsed = new Date(year, month, day);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    return null;
+  }
+
   // Parse various date value formats from Tableau
   private parseDateValue(dateValue: any): Date | null {
     if (!dateValue) return null;
@@ -437,13 +484,42 @@ export class TableauAPIClient {
     if (dateValue instanceof Date) return dateValue;
     
     const str = String(dateValue).trim();
-    
+    const hebrewMonths: Record<string, string> = {
+      'ינואר': 'january',
+      'פברואר': 'february',
+      'מרץ': 'march',
+      'מרס': 'march',
+      'אפריל': 'april',
+      'מאי': 'may',
+      'יוני': 'june',
+      'יולי': 'july',
+      'אוגוסט': 'august',
+      'ספטמבר': 'september',
+      'אוקטובר': 'october',
+      'נובמבר': 'november',
+      'דצמבר': 'december'
+    };
+    const normalizedStr = Object.entries(hebrewMonths).reduce(
+      (acc, [he, en]) => acc.replace(new RegExp(he, 'g'), en),
+      str
+    );
+
     // Try ISO format first
-    const isoDate = new Date(str);
+    const isoDate = new Date(normalizedStr);
     if (!isNaN(isoDate.getTime())) return isoDate;
-    
+
+    // Try D.M.YYYY or D.M.YYYY HH:mm:ss format
+    const dottedMatch = normalizedStr.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+    if (dottedMatch) {
+      const day = parseInt(dottedMatch[1], 10);
+      const month = parseInt(dottedMatch[2], 10) - 1;
+      const year = parseInt(dottedMatch[3], 10);
+      const dottedDate = new Date(year, month, day);
+      if (!isNaN(dottedDate.getTime())) return dottedDate;
+    }
+
     // Try "1 February 2026" format (Tableau default)
-    const tableauMatch = str.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
+    const tableauMatch = normalizedStr.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
     if (tableauMatch) {
       const monthNames = ['january', 'february', 'march', 'april', 'may', 'june',
                           'july', 'august', 'september', 'october', 'november', 'december'];
@@ -456,13 +532,13 @@ export class TableauAPIClient {
     }
     
     // Try MM/DD/YYYY format
-    const usMatch = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    const usMatch = normalizedStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
     if (usMatch) {
       return new Date(parseInt(usMatch[3]), parseInt(usMatch[1]) - 1, parseInt(usMatch[2]));
     }
     
     // Try "Week 9 2026" format (Tableau Storage view)
-    const weekMatch = str.match(/week\s+(\d+)\s+(\d{4})/i);
+    const weekMatch = normalizedStr.match(/week\s+(\d+)\s+(\d{4})/i);
     if (weekMatch) {
       const week = parseInt(weekMatch[1]);
       const year = parseInt(weekMatch[2]);
@@ -473,7 +549,7 @@ export class TableauAPIClient {
     }
     
     // Try "March 2026" format (month year only - assume 1st day)
-    const monthYearMatch = str.match(/([A-Za-z]+)\s+(\d{4})/);
+    const monthYearMatch = normalizedStr.match(/([A-Za-z]+)\s+(\d{4})/);
     if (monthYearMatch) {
       const monthNames = ['january', 'february', 'march', 'april', 'may', 'june',
                           'july', 'august', 'september', 'october', 'november', 'december'];
@@ -554,10 +630,11 @@ export class TableauAPIClient {
     endDate: string,
     customer?: string,
     warehouse?: string
-  ): Promise<{ transactions: Transaction[]; rawViewData: Map<string, any[]> }> {
+  ): Promise<{ transactions: Transaction[]; rawViewData: Map<string, any[]>; filteredViewData: Map<string, any[]> }> {
     console.log(`Fetching from Tableau: ${customer} - ${warehouse}, ${startDate} to ${endDate}`);
 
     const rawViewData = new Map<string, any[]>();
+    const filteredViewData = new Map<string, any[]>();
 
     try {
       // Ensure authenticated
@@ -571,7 +648,8 @@ export class TableauAPIClient {
         console.log('Billing 2025 project not found, using mock data');
         return { 
           transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
-          rawViewData 
+          rawViewData,
+          filteredViewData 
         };
       }
       console.log('Found Billing project:', billingProject.name);
@@ -581,7 +659,8 @@ export class TableauAPIClient {
         console.log('No customer specified, using mock data');
         return { 
           transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
-          rawViewData 
+          rawViewData,
+          filteredViewData 
         };
       }
 
@@ -590,7 +669,8 @@ export class TableauAPIClient {
         console.log(`Customer project '${customer}' not found, using mock data`);
         return { 
           transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
-          rawViewData 
+          rawViewData,
+          filteredViewData 
         };
       }
       console.log('Found customer project:', customerProject.name);
@@ -601,52 +681,51 @@ export class TableauAPIClient {
         console.log('No workbooks found, using mock data');
         return { 
           transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
-          rawViewData 
+          rawViewData,
+          filteredViewData 
         };
       }
       console.log(`Found ${workbooks.length} workbook(s):`, workbooks.map((w: any) => w.name));
 
       // Step 4: Get views from ALL matching workbooks
       const allTransactions: Transaction[] = [];
-      
+
       for (const targetWorkbook of workbooks) {
         const views = await this.getWorkbookViews(targetWorkbook.id);
         if (views.length === 0) continue;
         console.log(`[Tableau] Workbook '${targetWorkbook.name}' has ${views.length} views:`, views.map((v: any) => v.name));
 
-        // Step 5: Query each view for data
         for (const view of views) {
           const segment = this.mapViewNameToSegment(view.name);
           console.log(`[Tableau] View '${view.name}' mapped to segment: ${segment || 'SKIPPED'}`);
-          
-          // Debug: Query available filters for this view
+
           const availableFilters = await this.getViewFilters(view.id);
-          if (availableFilters.length > 0) {
-            console.log(`[Tableau] Available filters for '${view.name}':`, availableFilters.map((f: any) => f.name).join(', '));
-          }
-          
+          console.log(`[Tableau] View '${view.name}' available filters:`, availableFilters.map((f: any) => f.fieldName || f.caption || JSON.stringify(f)).join(', '));
+
           const viewData = await this.queryViewData(view.id, {}, {start: startDate, end: endDate});
-          
-          if (viewData && viewData.data) {
-            // Store RAW (unfiltered) data for Excel sheets — use all rows regardless of date filter
-            // Trim view name to avoid trailing space mismatches (e.g. "Inbound " vs "Inbound")
-            const viewKey = view.name.trim();
-            // Don't overwrite if we already have data for this view from a previous workbook
-            if (!rawViewData.has(viewKey)) {
-              rawViewData.set(viewKey, viewData.rawData || viewData.data);
-            }
-            
-            if (segment) {
-              const transactions = this.transformTableauData(
-                viewData.data, 
-                segment,
-                customer || 'Unknown', 
-                warehouse || 'Default'
-              );
-              allTransactions.push(...transactions);
-              console.log(`View '${view.name}': ${transactions.length} transactions`);
-            }
+          if (!viewData || !viewData.data) continue;
+
+          const viewKey = String(view.name || '').trim();
+          const rawRowCount = Array.isArray(viewData.rawData) ? viewData.rawData.length : viewData.data.length;
+          const filteredRowCount = Array.isArray(viewData.data) ? viewData.data.length : 0;
+          console.log(`[Tableau] View '${view.name}' rows: raw=${rawRowCount}, filtered=${filteredRowCount}`);
+          if (!rawViewData.has(viewKey)) {
+            rawViewData.set(viewKey, viewData.rawData || viewData.data);
           }
+          if (!filteredViewData.has(viewKey)) {
+            filteredViewData.set(viewKey, viewData.data);
+          }
+
+          if (!segment) continue;
+
+          const transactions = this.transformTableauData(
+            viewData.data,
+            segment,
+            customer || 'Unknown',
+            warehouse || 'Default'
+          );
+          allTransactions.push(...transactions);
+          console.log(`View '${view.name}': ${transactions.length} transactions`);
         }
       }
 
@@ -654,18 +733,20 @@ export class TableauAPIClient {
         console.log('No data from Tableau views, using mock data');
         return { 
           transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
-          rawViewData 
+          rawViewData,
+          filteredViewData 
         };
       }
 
       console.log(`Total transactions from Tableau: ${allTransactions.length}`);
-      return { transactions: allTransactions, rawViewData };
+      return { transactions: allTransactions, rawViewData, filteredViewData };
 
     } catch (error) {
       console.error('Error fetching from Tableau:', error);
       return { 
         transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
-        rawViewData 
+        rawViewData,
+        filteredViewData 
       };
     }
   }
