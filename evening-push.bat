@@ -5,7 +5,7 @@ echo Time: %date% %time%
 echo ==========================================
 echo.
 
-cd /d "c:\Dev - New\Windsurff invoice\invoice-processor"
+cd /d "%~dp0"
 
 REM Get current branch
 for /f "tokens=*" %%a in ('git rev-parse --abbrev-ref HEAD') do set BRANCH=%%a
@@ -14,9 +14,8 @@ echo.
 
 if "%BRANCH%"=="Test-Main" (
     echo ERROR: You should NOT be on Test-Main directly!
-    echo Switch to your feature branch first:
-    echo   Jacob: git checkout feature/jacob-sensos-qty
-    echo   Tomer: git checkout feature/tomer
+    echo Switch to your feature branch first.
+    echo   e.g.: git checkout feature/tomer-afimilk-fix
     echo.
     pause
     exit /b 1
