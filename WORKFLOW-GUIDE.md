@@ -82,9 +82,39 @@ https://logivice-api-production.up.railway.app/api/health
 ```
 Returns: commit hash, storage paths, environment name.
 
-## Per-Customer Billing Rules
-Each customer's billing logic lives in `server/services/qtyFiller.ts`.
-- **Jacob** owns: Sensos NL rules
-- **Tomer** owns: Afimilk NZ, AVT HKG rules
-- Do not edit another developer's customer section without coordinating first
-- Phase 8 will split these into separate files per customer
+## Adding a New Customer
+
+### Step 1 — Upload the template (always required)
+Go to Admin UI → Upload New Pricelist → upload the customer's Excel template.
+The app automatically reads: segment, clause, category, UOM, rate columns.
+**No code needed for standard templates.**
+
+### Step 2 — Does the customer need custom rules?
+Ask: does the standard flow produce correct quantities?
+- **Yes → done.** No code needed.
+- **No → create a customer rule file** (see below).
+
+Custom rules are needed when a customer has special billing logic, for example:
+- Quantity = distinct order count (not raw row count)
+- Storage = max pallet × sqm formula
+- Template must preserve styles/formulas (XML patching required)
+- Sheet names must be renamed by billing period
+
+### Step 3 — Creating a customer rule file (only if needed)
+1. Create `server/rules/<customername>.ts`
+2. Import only from `server/rules/_base.ts` — never from another customer's file
+3. Register the customer name in `server/rules/index.ts`
+4. Write tests in `server/tests/`
+
+**Rule: one customer = one file. Changes in that file cannot affect any other customer.**
+Any developer can create or edit any customer file.
+
+## Per-Customer Rule Files (current)
+```
+server/rules/
+  _base.ts      ← shared utilities (no customer logic)
+  afimilk.ts    ← Afimilk NZ billing rules
+  sensos.ts     ← Sensos NL billing rules
+  index.ts      ← reads customer name → calls right rule file
+```
+To add a new customer with custom logic: add `<customer>.ts` + one line in `index.ts`.
