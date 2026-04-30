@@ -648,20 +648,24 @@ export class QTYFiller {
     if (inboundData.length > 0) {
       const headers = Object.keys(inboundData[0]);
       const refCol  = findCol(headers, ['Ref (Orders)', 'ref']);
-      const typeCol = findCol(headers, ['Type (Billable', 'Type (Bil', 'type']);
+      const distinctCountIdCol = findCol(headers, ['Distinct count of Id (Billable Scan Logs)', 'Distinct count of Id']);
 
       const distinctRefs = new Set<string>();
       let boxCount = 0;
       for (const row of inboundData) {
         if (refCol) distinctRefs.add(String(row[refCol] ?? ''));
-        if (typeCol && String(row[typeCol] ?? '').toLowerCase().trim() === 'box') boxCount++;
+        // Sum "Distinct count of Id (Billable Scan Logs)" values for box count
+        if (distinctCountIdCol) {
+          const val = parseFloat(String(row[distinctCountIdCol] ?? '0')) || 0;
+          boxCount += val;
+        }
       }
 
       // Match pricelist keys: segment=Inbound, clause=Per Order / Per Unit Scan
       // We match by segment+clause prefix and override — iterate quantities to find matching keys
       result.set('__sensos_inbound_orders', distinctRefs.size);
       result.set('__sensos_inbound_boxes', boxCount);
-      console.log(`[QTYFiller] Sensos Inbound: ${distinctRefs.size} orders, ${boxCount} boxes`);
+      console.log(`[QTYFiller] Sensos Inbound: ${distinctRefs.size} orders, ${boxCount} boxes (summing Distinct count of Id)`);
     }
 
     // --- Outbound ---
@@ -671,19 +675,18 @@ export class QTYFiller {
       console.log(`[QTYFiller] Outbound headers: ${JSON.stringify(headers)}`);
       console.log(`[QTYFiller] Outbound row[0]: ${JSON.stringify(outboundData[0])}`);
       const refCol    = findCol(headers, ['Ref (Orders)', 'ref']);
-      // exact match 'box' first, then fallback to includes
-      const boxCol    = headers.find(h => h.trim().toLowerCase() === 'box') ?? findCol(headers, ['box']);
+      const distinctCountIdCol = findCol(headers, ['Distinct count of Id (Billable Scan Logs)', 'Distinct count of Id']);
       const domIntCol = findCol(headers, ["Dom/Int", 'domint', 'domestic']);
-      console.log(`[QTYFiller] Outbound cols - ref:${refCol}, box:${boxCol}, domInt:${domIntCol}`);
+      console.log(`[QTYFiller] Outbound cols - ref:${refCol}, distinctCountId:${distinctCountIdCol}, domInt:${domIntCol}`);
 
       const domRefs = new Set<string>();
       const intRefs = new Set<string>();
       let outBoxCount = 0;
       for (const row of outboundData) {
         const ref    = refCol ? String(row[refCol] ?? '') : '';
-        const boxVal = boxCol ? (parseFloat(String(row[boxCol] ?? '0')) || 0) : 0;
+        const boxVal = distinctCountIdCol ? (parseFloat(String(row[distinctCountIdCol] ?? '0')) || 0) : 0;
         const domInt = domIntCol ? String(row[domIntCol] ?? '').toLowerCase() : '';
-        outBoxCount += boxVal; // sum numeric box column
+        outBoxCount += boxVal; // sum Distinct count of Id (Billable Scan Logs)
         if ((domInt.includes('local') || domInt.includes('dom')) && ref) domRefs.add(ref);
         else if ((domInt.includes("int'l") || domInt.includes('int')) && ref) intRefs.add(ref);
         else if (ref) domRefs.add(ref); // default to domestic
@@ -693,6 +696,90 @@ export class QTYFiller {
       result.set('__sensos_outbound_int_orders', intRefs.size);
       result.set('__sensos_outbound_boxes', outBoxCount);
       console.log(`[QTYFiller] Sensos Outbound: ${domRefs.size} dom orders, ${intRefs.size} int orders, ${outBoxCount} boxes`);
+    }
+
+    // --- Storage ---
+    // Find max Pallet and max Shelf across all days in the month
+    // Then calculate total Sqm: Pallet × 1.5 + Shelf × 0.5
+    const storageData = getView('Storage');
+    if (storageData.length > 0) {
+      const toNumber = (v: any): number => {
+        const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      let maxPallet = 0;
+      let maxShelf = 0;
+
+      for (const row of storageData) {
+        const metricName = String(row['Name'] ?? row['Metric'] ?? '').toLowerCase();
+        const value = toNumber(row['Value'] ?? row['value']);
+        console.log(`[QTYFiller] Storage row: name="${metricName}" value=${value}`);
+
+        if (metricName.includes('pallet')) {
+          maxPallet = Math.max(maxPallet, value);
+        } else if (metricName.includes('shelf')) {
+          maxShelf = Math.max(maxShelf, value);
+        }
+      }
+
+      const shelfSqm = maxShelf * 0.5;
+      const palletSqm = maxPallet * 1.5;
+      const totalSqm = shelfSqm + palletSqm;
+
+      result.set('__sensos_storage_max_pallet', maxPallet);
+      result.set('__sensos_storage_max_shelf', maxShelf);
+      result.set('__sensos_storage_total_sqm', totalSqm);
+      console.log(`[QTYFiller] Sensos Storage: maxPallet=${maxPallet}, maxShelf=${maxShelf}, shelfSqm=${shelfSqm}, palletSqm=${palletSqm}, totalSqm=${totalSqm}`);
+    }
+
+    // --- Management ---
+    // Sum "Distinct count of Ref (Orders)" excluding customer user "Lilach Almasi"
+    const mgmtData = getView('Management') || getView('Managment');
+    if (mgmtData.length > 0) {
+      const toNumber = (v: any): number => {
+        const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      let manualOrderCount = 0;
+      for (const row of mgmtData) {
+        const userName = String(row['Name (Users)'] ?? '').trim();
+        if (userName.toLowerCase() === 'lilach almasi') {
+          console.log(`[QTYFiller] Management: excluding customer user "${userName}"`);
+          continue;
+        }
+        const count = toNumber(row['Distinct count of Ref (Orders)'] ?? row['Distinct count of Ref'] ?? 0);
+        manualOrderCount += count;
+        console.log(`[QTYFiller] Management: user="${userName}", count=${count}`);
+      }
+
+      result.set('__sensos_management_manual_orders', manualOrderCount);
+      console.log(`[QTYFiller] Sensos Management: ${manualOrderCount} manual orders (excluding Lilach Almasi)`);
+    }
+
+    // --- EXW ---
+    // Count rows where service_name exactly equals "EXW", ignore "All" summary rows
+    const exwData = getView('EXW');
+    if (exwData.length > 0) {
+      const toNumber = (v: any): number => {
+        const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      let exwCount = 0;
+      for (const row of exwData) {
+        const serviceName = String(row['service_name'] ?? '').trim();
+        if (serviceName.toLowerCase() === 'all') continue;
+        if (serviceName === 'EXW') {
+          const count = toNumber(row['Distinct count of Ref (Orders)'] ?? row['Distinct count of Ref'] ?? 1);
+          exwCount += count;
+          console.log(`[QTYFiller] EXW: ref="${row['Ref (Orders)']}", service="${serviceName}", count=${count}`);
+        }
+      }
+
+      result.set('__sensos_exw_count', exwCount);
+      console.log(`[QTYFiller] Sensos EXW: ${exwCount} EXW orders`);
     }
 
     return result;
@@ -736,6 +823,11 @@ export class QTYFiller {
         qtyCell.value   = newQty;
         totalCell.value = newTotal;
 
+        // For fractional quantities (e.g. Storage Sqm = 16.5), ensure cell format shows decimals
+        if (newQty !== Math.floor(newQty)) {
+          qtyCell.numFmt = '0.0';
+        }
+
         filledRows.push({
           sheet: sheet.name,
           row: item.row,
@@ -758,14 +850,23 @@ export class QTYFiller {
     quantities: Map<string, number>,
     outputPath: string,
     transactions?: Transaction[],
-    rawViewData?: Map<string, any[]>
+    rawViewData?: Map<string, any[]>,
+    filteredViewData?: Map<string, any[]>
   ): Promise<FillResult> {
     const filledRows: FillResult['filledRows'] = [];
     const errors: string[] = [];
 
     // For Sensos NL: override quantity map using raw view data (orders + boxes)
-    if (rawViewData) {
-      const sensosSummary = this.buildSensosQuantities(rawViewData);
+    const quantityViewData = filteredViewData ?? rawViewData;
+    if (quantityViewData) {
+      const quantitySource = filteredViewData ? 'filteredViewData' : 'rawViewData';
+      console.log(`[QTYFiller] Sensos calculation source: ${quantitySource}`);
+      console.log(
+        '[QTYFiller] Sensos calculation view rows:',
+        Array.from(quantityViewData.entries()).map(([k, v]) => `${k}(${Array.isArray(v) ? v.length : 0})`).join(', ')
+      );
+      const sensosSummary = this.buildSensosQuantities(quantityViewData);
+      console.log(`[QTYFiller] Sensos summary:`, Object.fromEntries(sensosSummary));
       // Map internal sensos keys to actual pricelist line item keys
       for (const sheet of templateStructure.sheets) {
         if (sheet.type !== 'invoice') continue;
@@ -774,6 +875,7 @@ export class QTYFiller {
           const clause = item.clause.toLowerCase();
           const cat    = item.category.toLowerCase();
           const key    = this.getLineItemKey(item);
+          console.log(`[QTYFiller] LineItem row=${item.row}: seg="${seg}" clause="${clause}" cat="${cat}" key="${key}"`);
           if (seg === 'inbound' && clause.includes('per order')) {
             quantities.set(key, sensosSummary.get('__sensos_inbound_orders') ?? 0);
           } else if (seg === 'inbound' && clause.includes('per unit scan') && (cat.includes('box') || cat.includes('per box'))) {
@@ -784,6 +886,52 @@ export class QTYFiller {
             quantities.set(key, sensosSummary.get('__sensos_outbound_int_orders') ?? 0);
           } else if (seg === 'outbound' && clause.includes('per unit scan') && (cat.includes('box') || cat.includes('per box'))) {
             quantities.set(key, sensosSummary.get('__sensos_outbound_boxes') ?? 0);
+          } else if (seg === 'storage' && clause.includes('space') && cat.includes('per area')) {
+            // Row 20: Storage Space - per area - per month
+            // Compare: totalSqm × rate vs minimum area rate
+            // If per-area cost >= minimum, use per-area; otherwise leave 0
+            const totalSqm = sensosSummary.get('__sensos_storage_total_sqm') ?? 0;
+            const rate = item.rate ?? 0;
+            const perAreaCost = totalSqm * rate;
+            // Find minimum area rate from the template (next row)
+            const minAreaItem = sheet.lineItems.find(li => 
+              li.segment.toLowerCase() === 'storage' && 
+              li.clause.toLowerCase().includes('space') && 
+              li.category.toLowerCase().includes('minimum')
+            );
+            const minAreaRate = minAreaItem?.rate ?? 0;
+            console.log(`[QTYFiller] Storage decision: totalSqm=${totalSqm}, perAreaCost=${perAreaCost} (${totalSqm}×${rate}), minAreaRate=${minAreaRate}`);
+            if (perAreaCost >= minAreaRate) {
+              quantities.set(key, totalSqm);
+            } else {
+              quantities.set(key, 0);
+            }
+          } else if (seg === 'storage' && clause.includes('space') && cat.includes('minimum')) {
+            // Row 21: Storage Space - Minimum Area - month
+            // Only fill this if per-area cost < minimum rate
+            const totalSqm = sensosSummary.get('__sensos_storage_total_sqm') ?? 0;
+            const minRate = item.rate ?? 0;
+            // Find per-area rate from the template (previous row)
+            const perAreaItem = sheet.lineItems.find(li => 
+              li.segment.toLowerCase() === 'storage' && 
+              li.clause.toLowerCase().includes('space') && 
+              li.category.toLowerCase().includes('per area')
+            );
+            const perAreaRate = perAreaItem?.rate ?? 0;
+            const perAreaCost = totalSqm * perAreaRate;
+            console.log(`[QTYFiller] Storage minimum: totalSqm=${totalSqm}, perAreaCost=${perAreaCost}, minRate=${minRate}`);
+            if (perAreaCost < minRate) {
+              quantities.set(key, 1);
+            } else {
+              quantities.set(key, 0);
+            }
+          } else if (seg === 'management' && (clause.includes('manual') || cat.includes('manual'))) {
+            quantities.set(key, sensosSummary.get('__sensos_management_manual_orders') ?? 0);
+          } else if (seg === 'management' && item.row === 31) {
+            // Row 31: Management fixed cost - always 1
+            quantities.set(key, 1);
+          } else if (seg === 'outbound' && clause.includes('vas') && cat.includes('exw')) {
+            quantities.set(key, sensosSummary.get('__sensos_exw_count') ?? 0);
           }
         }
       }
@@ -795,6 +943,7 @@ export class QTYFiller {
     // Step 2: Use XLSX to add raw data sheets on top of the already-written file
     const writtenBuffer = await fs.readFile(outputPath);
     const workbook = XLSX.read(writtenBuffer, { type: 'buffer', cellStyles: true });
+    console.log('[QTYFiller] Step 2 - XLSX workbook sheets:', workbook.SheetNames);
 
     if (rawViewData) {
       console.log('[QTYFiller] rawViewData keys:', Array.from(rawViewData.keys()).map(k => `"${k}"(${rawViewData.get(k)?.length}rows)`).join(', '));
@@ -815,18 +964,16 @@ export class QTYFiller {
       if (vas) this.addRawSheet(workbook, vas, 'VAS');
       const management = rawViewData.get('Management') || rawViewData.get('Managment');
       if (management) this.addRawSheet(workbook, management, 'Management');
-      const pivot = rawViewData.get('Pivot');
-      if (pivot) this.addRawSheet(workbook, pivot, 'Pivot');
-      const pivotOut = rawViewData.get('Pivot Out');
-      if (pivotOut) this.addRawSheet(workbook, pivotOut, 'Pivot Out');
       const exw = rawViewData.get('EXW');
       if (exw) this.addRawSheet(workbook, exw, 'EXW');
     }
 
-    if (transactions && transactions.length > 0) {
-      this.addAnalyzeSheet(workbook, transactions);
+    console.log('[QTYFiller] Final workbook sheets before write:', workbook.SheetNames);
+    for (const sn of workbook.SheetNames) {
+      const ws = workbook.Sheets[sn];
+      const range = ws?.['!ref'] || 'EMPTY';
+      console.log(`[QTYFiller]   Sheet "${sn}" range: ${range}`);
     }
-
     XLSX.writeFile(workbook, outputPath, { cellStyles: true });
     return { success: errors.length === 0, filePath: outputPath, filledRows, errors };
   }
@@ -1440,6 +1587,11 @@ export class QTYFiller {
     if (!data.length) return;
 
     const headers = Object.keys(data[0]);
+    
+    // DEBUG: Log headers to diagnose Boxed count issue
+    console.log(`[QTYFiller] ${name} sheet headers:`, headers);
+    console.log(`[QTYFiller] ${name} first row sample:`, data[0]);
+    
     const rows = data.map(r => headers.map(h => r[h] ?? ''));
 
     // Build the sheet as AoA so we can append the summary table to the right
@@ -1452,7 +1604,12 @@ export class QTYFiller {
 
       const serviceLevelCol = findCol(['Service Level', 'service_name', 'Name (Service']);
       const refCol          = findCol(['Ref (Orders)', 'Ref(Orders)', 'ref']);
-      const boxCol          = findCol(['box']);
+      const distinctCountIdCol = findCol(['Distinct count of Id (Billable Scan Logs)', 'Distinct count of Id']);
+      
+      // DEBUG: Log which column was found
+      console.log(`[QTYFiller] ${name} - Service Level col:`, serviceLevelCol);
+      console.log(`[QTYFiller] ${name} - Ref col:`, refCol);
+      console.log(`[QTYFiller] ${name} - Distinct count of Id col:`, distinctCountIdCol);
 
       const startCol = headers.length + 1;
       let summaryHeader: string[];
@@ -1462,22 +1619,25 @@ export class QTYFiller {
 
       if (name === 'Inbound') {
         // Inbound: group by Service Level only
-        // box column contains text 'box' → count rows where value === 'box'
-        const typeCol = findCol(['Type (Billable', 'Type (Bil', 'type']);
+        // Box count = sum of "Distinct count of Id (Billable Scan Logs)" values
+        const distinctCountIdCol = findCol(['Distinct count of Id (Billable Scan Logs)', 'Distinct count of Id']);
         const pivot = new Map<string, { refs: Set<string>; boxes: number }>();
         for (const row of data) {
           const svcLevel  = serviceLevelCol ? String(row[serviceLevelCol] ?? 'Unknown') : 'Unknown';
           const ref       = refCol ? String(row[refCol] ?? '') : '';
-          const typeValue = typeCol ? String(row[typeCol] ?? '').toLowerCase().trim() : '';
           if (!pivot.has(svcLevel)) pivot.set(svcLevel, { refs: new Set(), boxes: 0 });
           const entry = pivot.get(svcLevel)!;
           if (ref) entry.refs.add(ref);
-          if (typeValue === 'box') entry.boxes += 1;
+          // Sum "Distinct count of Id (Billable Scan Logs)" values for box count
+          if (distinctCountIdCol) {
+            const val = parseFloat(String(row[distinctCountIdCol] ?? '0')) || 0;
+            entry.boxes += val;
+          }
         }
         summaryHeader = [
           serviceLevelCol ?? 'Name (Service Levels)',
           'Distinct count of Ref (Orders)',
-          'box'
+          'Boxed count'
         ];
         summaryDataRows = [];
         for (const [svcLevel, { refs, boxes }] of pivot.entries()) {
@@ -1485,22 +1645,30 @@ export class QTYFiller {
           totalRefs  += refs.size;
           totalBoxes += boxes;
         }
+        
+        // DEBUG: Log Inbound totals
+        console.log(`[QTYFiller] Inbound - Total Refs: ${totalRefs}, Total Boxes: ${totalBoxes}`);
+        console.log(`[QTYFiller] Inbound - Summary rows:`, summaryDataRows);
 
       } else {
         // Outbound: group by Service Level + Dom/Int'l
-        // box column is numeric → sum it per group
-        const domIntCol = findCol(["Dom/Int'l", "Dom/Int", 'domint']);
+        // Box count = sum of "Distinct count of Id (Billable Scan Logs)" values
+        const domIntCol = findCol(["Dom/Int'l", 'Dom/Int', 'domint']);
+        const distinctCountIdCol = findCol(['Distinct count of Id (Billable Scan Logs)', 'Distinct count of Id']);
         const pivot = new Map<string, { svc: string; domInt: string; refs: Set<string>; boxes: number }>();
         for (const row of data) {
           const svcLevel = serviceLevelCol ? String(row[serviceLevelCol] ?? 'Unknown') : 'Unknown';
           const domInt   = domIntCol ? String(row[domIntCol] ?? '') : '';
           const ref      = refCol ? String(row[refCol] ?? '') : '';
-          const boxVal   = boxCol ? (parseFloat(String(row[boxCol] ?? '0')) || 0) : 0;
           const key      = `${svcLevel}||${domInt}`;
           if (!pivot.has(key)) pivot.set(key, { svc: svcLevel, domInt, refs: new Set(), boxes: 0 });
           const entry = pivot.get(key)!;
           if (ref) entry.refs.add(ref);
-          entry.boxes += boxVal;
+          // Sum "Distinct count of Id (Billable Scan Logs)" values for box count
+          if (distinctCountIdCol) {
+            const val = parseFloat(String(row[distinctCountIdCol] ?? '0')) || 0;
+            entry.boxes += val;
+          }
         }
         summaryHeader = ['Name', "Dom/Int'l", 'Ref count', 'Boxed count'];
         summaryDataRows = [];
@@ -1509,6 +1677,10 @@ export class QTYFiller {
           totalRefs  += refs.size;
           totalBoxes += boxes;
         }
+        
+        // DEBUG: Log Outbound totals
+        console.log(`[QTYFiller] Outbound - Total Refs: ${totalRefs}, Total Boxes: ${totalBoxes}`);
+        console.log(`[QTYFiller] Outbound - Summary rows:`, summaryDataRows);
       }
 
       // Write header row into aoa[0]
@@ -1539,6 +1711,59 @@ export class QTYFiller {
       }
 
       console.log(`[QTYFiller] ${name} summary: ${summaryDataRows.length} groups, ${totalRefs} orders, ${totalBoxes} boxes`);
+    }
+
+    // For Storage sheet: add summary table with Type/Sqm/TotalMax/Total space (Sqm)
+    if (name === 'Storage') {
+      const toNumber = (v: any): number => {
+        const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      // Calculate max Pallet and max Shelf across all days
+      let maxPallet = 0;
+      let maxShelf = 0;
+      for (const row of data) {
+        const metricName = String(row['Name'] ?? row['Metric'] ?? '').toLowerCase();
+        const value = toNumber(row['Value'] ?? row['value']);
+        if (metricName.includes('pallet')) {
+          maxPallet = Math.max(maxPallet, value);
+        } else if (metricName.includes('shelf')) {
+          maxShelf = Math.max(maxShelf, value);
+        }
+      }
+
+      const shelfSqm = maxShelf * 0.5;
+      const palletSqm = maxPallet * 1.5;
+      const totalSqm = shelfSqm + palletSqm;
+
+      // Write summary table to the right of raw data
+      const startCol = headers.length + 1;
+      // Row 0 = header row in aoa
+      aoa[0][startCol] = 'Type';
+      aoa[0][startCol + 1] = 'Sqm';
+      aoa[0][startCol + 2] = 'TotalMax';
+      aoa[0][startCol + 3] = 'Total space (Sqm)';
+      // Shelf row
+      aoa[1] = aoa[1] || [];
+      aoa[1][startCol] = 'Shelf';
+      aoa[1][startCol + 1] = 0.5;
+      aoa[1][startCol + 2] = maxShelf;
+      aoa[1][startCol + 3] = shelfSqm;
+      // Pallet row
+      aoa[2] = aoa[2] || [];
+      aoa[2][startCol] = 'Pallet';
+      aoa[2][startCol + 1] = 1.5;
+      aoa[2][startCol + 2] = maxPallet;
+      aoa[2][startCol + 3] = palletSqm;
+      // Total row
+      aoa[3] = aoa[3] || [];
+      aoa[3][startCol] = 'Total';
+      aoa[3][startCol + 1] = '';
+      aoa[3][startCol + 2] = '';
+      aoa[3][startCol + 3] = totalSqm;
+
+      console.log(`[QTYFiller] Storage summary: maxShelf=${maxShelf}(${shelfSqm}sqm), maxPallet=${maxPallet}(${palletSqm}sqm), total=${totalSqm}sqm`);
     }
 
     const sheet = XLSX.utils.aoa_to_sheet(aoa);

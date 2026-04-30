@@ -1,3 +1,5 @@
+# ARCHIVED - This project now runs on Railway (nixpacks.toml)
+# Kept for reference only. Do not use for new deployments.
 # Render.com deployment configuration
 services:
   - type: web
@@ -18,3 +20,7 @@ services:
         value: logivice
       - key: TABLEAU_BASE_URL
         value: https://logivice.tableau.com
+    disk:
+      name: pricelists
+      mountPath: /app/uploads/pricelists
+      sizeGB: 1

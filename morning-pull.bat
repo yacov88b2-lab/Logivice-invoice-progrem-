@@ -1,75 +1,58 @@
 @echo off
-setlocal
+echo ==========================================
+echo MORNING PULL - Get latest from Test-Main
+echo Time: %date% %time%
+echo ==========================================
+echo.
 
-REM Always run from this script's directory
 cd /d "%~dp0"
 
-echo ========================================
-echo   Morning Pull (feature/tomer)
-echo   Merges origin/Test-Main into feature/tomer
-echo ========================================
+REM Get current branch
+for /f "tokens=*" %%a in ('git rev-parse --abbrev-ref HEAD') do set BRANCH=%%a
+echo Current branch: %BRANCH%
 echo.
 
-git rev-parse --is-inside-work-tree >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-  echo ERROR: not a git repository (or git not installed).
-  echo.
-  pause
-  exit /b 1
+if "%BRANCH%"=="Test-Main" (
+    echo ERROR: You should NOT be on Test-Main directly!
+    echo Switch to your feature branch first.
+    echo   e.g.: git checkout feature/tomer-afimilk-fix
+    echo.
+    pause
+    exit /b 1
 )
 
-git remote get-url origin >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-  echo ERROR: git remote "origin" not found.
-  echo.
-  pause
-  exit /b 1
-)
+REM Step 1: Stash any uncommitted changes
+echo [1/4] Saving any uncommitted work...
+git stash
 
-git diff --quiet
-if %ERRORLEVEL% neq 0 (
-  echo ERROR: you have uncommitted changes.
-  echo Commit or stash before running morning pull.
-  echo.
-  git status --short
-  echo.
-  pause
-  exit /b 1
-)
-
-echo Checking out feature/tomer...
-git checkout feature/tomer
-if %ERRORLEVEL% neq 0 (
-  echo.
-  echo ERROR: failed to checkout feature/tomer.
-  echo.
-  pause
-  exit /b 1
-)
-
-echo.
-echo Fetching origin...
+REM Step 2: Fetch latest from remote
+echo [2/4] Fetching latest changes...
 git fetch origin
-if %ERRORLEVEL% neq 0 (
-  echo.
-  echo ERROR: git fetch failed.
-  echo.
-  pause
-  exit /b 1
+
+REM Step 3: Pull latest Test-Main into your branch
+echo [3/4] Merging latest Test-Main into %BRANCH%...
+git merge origin/Test-Main --no-edit
+if errorlevel 1 (
+    echo.
+    echo *** MERGE CONFLICT! ***
+    echo Fix the conflicts, then run:
+    echo   git add .
+    echo   git commit -m "Resolved merge conflicts"
+    echo.
+    pause
+    exit /b 1
 )
 
-echo.
-echo Merging origin/Test-Main into feature/tomer...
-git merge origin/Test-Main
-if %ERRORLEVEL% neq 0 (
-  echo.
-  echo ERROR: merge failed (possible conflict).
-  echo Resolve conflicts, then run morning-pull.bat again.
-  echo.
-  pause
-  exit /b 1
-)
+REM Step 4: Restore stashed changes
+echo [4/4] Restoring your uncommitted work...
+git stash pop 2>nul
 
 echo.
-echo DONE: feature/tomer is up to date with origin/Test-Main.
+echo ==========================================
+echo MORNING PULL COMPLETE!
+echo You are on branch: %BRANCH%
+echo You have the latest code from Test-Main.
+echo Start working!
+echo ==========================================
+echo.
 pause

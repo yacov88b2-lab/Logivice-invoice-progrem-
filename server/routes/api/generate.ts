@@ -7,7 +7,8 @@ import { AuditLogModel } from '../../models/AuditLog';
 import { TableauAPIClient } from '../../services/tableauAPI';
 import { ExcelDataExtractor } from '../../services/excelDataExtractor';
 import { DataMapper } from '../../services/dataMapper';
-import { QTYFiller } from '../../services/qtyFiller';
+import { fillInvoice, extractAfimilkStoragePeriod } from '../../rules/index';
+import { pricelistStorage } from '../../services/pricelistStorage';
 
 const router = express.Router();
 
@@ -27,11 +28,14 @@ router.post('/export-total', async (req, res) => {
       return res.status(404).json({ error: 'Pricelist not found' });
     }
 
-    if (!fs.existsSync(pricelist.file_path)) {
+    // Check if file exists (SharePoint or local)
+    const fileExists = await pricelistStorage.fileExists(pricelist.file_path);
+    if (!fileExists) {
       return res.status(404).json({ error: 'Pricelist file not found' });
     }
 
-    const pricelistBuffer = fs.readFileSync(pricelist.file_path);
+    // Retrieve pricelist file from SharePoint or local storage
+    const pricelistBuffer = await pricelistStorage.retrieveFile(pricelist.file_path);
 
     const tableauClient = new TableauAPIClient();
     const { transactions, rawViewData } = await tableauClient.fetchTransactionsWithRawData(
@@ -146,20 +150,22 @@ router.post('/invoice', async (req, res) => {
       return res.status(404).json({ error: 'Pricelist not found' });
     }
 
-    // Check if file exists
-    if (!fs.existsSync(pricelist.file_path)) {
+    // Check if file exists (SharePoint or local)
+    const fileExists = await pricelistStorage.fileExists(pricelist.file_path);
+    if (!fileExists) {
       return res.status(404).json({ error: 'Pricelist file not found' });
     }
 
-    // Read pricelist file
-    const pricelistBuffer = fs.readFileSync(pricelist.file_path);
+    // Retrieve pricelist file from SharePoint or local storage
+    const pricelistBuffer = await pricelistStorage.retrieveFile(pricelist.file_path);
 
     const isAfimilkBilling = String(pricelist.customer_name || '').toLowerCase().includes('afimilk');
 
     // Get transactions - either from Excel file or Tableau API
     let transactions;
     let rawViewData = new Map<string, any[]>();
-    
+    let filteredViewData = new Map<string, any[]>();
+
     if (use_excel_data && !isAfimilkBilling) {
       // First try to extract from the uploaded Excel file itself (Analyze sheet)
       transactions = ExcelDataExtractor.extractFromAnalyzeSheet(pricelistBuffer);
@@ -176,6 +182,7 @@ router.post('/invoice', async (req, res) => {
         );
         transactions = result.transactions;
         rawViewData = result.rawViewData;
+        filteredViewData = result.filteredViewData;
       } else {
         console.log(`Using ${transactions.length} transactions from Excel file`);
         // Enrich with customer/warehouse info from pricelist
@@ -196,6 +203,7 @@ router.post('/invoice', async (req, res) => {
       );
       transactions = result.transactions;
       rawViewData = result.rawViewData;
+      filteredViewData = result.filteredViewData;
     }
 
     // Map transactions to line items
@@ -215,7 +223,8 @@ router.post('/invoice', async (req, res) => {
     });
 
     // Prepare output path
-    const outputDir = path.join(process.cwd(), 'uploads', 'generated');
+    const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(process.cwd(), 'data');
+    const outputDir = path.join(dataDir, 'uploads', 'generated');
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
@@ -226,37 +235,33 @@ router.post('/invoice', async (req, res) => {
       `${pricelist.customer_name}_${pricelist.warehouse_code}_${timestamp}.xlsx`
     );
 
-    // Fill QTY and generate invoice
-    const fillResult = isAfimilkBilling
-      ? await QTYFiller.fillAfimilkPreserveTemplate(
-          pricelistBuffer,
-          outputPath,
-          pricelist.template_structure,
-          quantityMap,
-          transactions,
-          rawViewData,
-          (() => {
-            const start = new Date(String(start_date));
-            const end = new Date(String(end_date));
-            if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
-            if (start.getFullYear() !== end.getFullYear()) return null;
-            if (start.getMonth() !== end.getMonth()) return null;
-            const mm = String(start.getMonth() + 1).padStart(2, '0');
-            const yyyy = String(start.getFullYear());
-            return { mm, yyyy };
-          })()
-        )
-      : await QTYFiller.fill(
-          pricelistBuffer,
-          pricelist.template_structure,
-          quantityMap,
-          outputPath,
-          transactions,
-          rawViewData // Pass raw Tableau view data for exact column matching
-        );
+    // Compute expected billing period for Afimilk sheet rename
+    const expectedInboundPeriod = (() => {
+      const start = new Date(String(start_date));
+      const end   = new Date(String(end_date));
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+      if (start.getFullYear() !== end.getFullYear()) return null;
+      if (start.getMonth() !== end.getMonth()) return null;
+      const mm   = String(start.getMonth() + 1).padStart(2, '0');
+      const yyyy = String(start.getFullYear());
+      return { mm, yyyy };
+    })();
+
+    // Fill QTY and generate invoice — dispatches to the correct customer rule
+    const fillResult = await fillInvoice(
+      pricelistBuffer,
+      pricelist.template_structure,
+      quantityMap,
+      outputPath,
+      pricelist.customer_name,
+      transactions,
+      rawViewData,
+      filteredViewData,
+      expectedInboundPeriod
+    );
 
     const billingPeriod = isAfimilkBilling
-      ? QTYFiller.extractAfimilkStoragePeriod(rawViewData?.get('Storage') ?? [])
+      ? extractAfimilkStoragePeriod(rawViewData?.get('Storage') ?? [])
       : null;
 
     // Log audit entry
@@ -339,8 +344,8 @@ router.post('/preview', async (req, res) => {
       return res.status(404).json({ error: 'Pricelist not found' });
     }
 
-    // Read pricelist file
-    const pricelistBuffer = fs.readFileSync(pricelist.file_path);
+    // Retrieve pricelist file from SharePoint or local storage
+    const pricelistBuffer = await pricelistStorage.retrieveFile(pricelist.file_path);
 
     // Get transactions from Excel file (like generate endpoint)
     let transactions = ExcelDataExtractor.extractFromAnalyzeSheet(pricelistBuffer);

@@ -1,5 +1,16 @@
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
+const getErrorMessage = async (res: Response, fallback: string) => {
+  try {
+    const data = await res.json();
+    if (data?.details) return String(data.details);
+    if (data?.error) return String(data.error);
+  } catch {
+    // ignore
+  }
+  return fallback;
+};
+
 export const api = {
   // Pricelists
   getPricelists: async () => {
@@ -74,7 +85,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pricelist_id: pricelistId, start_date: startDate, end_date: endDate }),
     });
-    if (!res.ok) throw new Error('Failed to preview mapping');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to preview mapping'));
     return res.json();
   },
 
@@ -89,8 +100,22 @@ export const api = {
         user_id: userId 
       }),
     });
-    if (!res.ok) throw new Error('Failed to generate invoice');
-    return res.json();
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to generate invoice'));
+    const data = await res.json();
+    if (!data?.success) {
+      throw new Error(String(data?.error || 'Failed to generate invoice'));
+    }
+    return data;
+  },
+
+  exportTotal: async (pricelistId: number, startDate: string, endDate: string) => {
+    const res = await fetch(`${API_BASE}/generate/export-total`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pricelist_id: pricelistId, start_date: startDate, end_date: endDate }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to export total. Please try again.'));
+    return res;
   },
 
   downloadInvoice: (auditLogId: number) => {

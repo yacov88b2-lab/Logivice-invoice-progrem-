@@ -1,112 +1,90 @@
 @echo off
-setlocal
+echo ==========================================
+echo EVENING PUSH - Push your work to Test-Main
+echo Time: %date% %time%
+echo ==========================================
+echo.
 
-REM Always run from this script's directory
 cd /d "%~dp0"
 
-echo ========================================
-echo   Evening Push (merge feature/tomer -> Test-Main)
-echo   Pushes Test-Main to origin (triggers staging deploy)
-echo ========================================
+REM Get current branch
+for /f "tokens=*" %%a in ('git rev-parse --abbrev-ref HEAD') do set BRANCH=%%a
+echo Current branch: %BRANCH%
 echo.
 
-git rev-parse --is-inside-work-tree >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-  echo ERROR: not a git repository (or git not installed).
-  echo.
-  pause
-  exit /b 1
+if "%BRANCH%"=="Test-Main" (
+    echo ERROR: You should NOT be on Test-Main directly!
+    echo Switch to your feature branch first.
+    echo   e.g.: git checkout feature/tomer-afimilk-fix
+    echo.
+    pause
+    exit /b 1
 )
 
-git remote get-url origin >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-  echo ERROR: git remote "origin" not found.
-  echo.
-  pause
-  exit /b 1
+if "%BRANCH%"=="main" (
+    echo ERROR: You should NOT be on main!
+    echo Switch to your feature branch first.
+    echo.
+    pause
+    exit /b 1
 )
 
-git diff --quiet
-if %ERRORLEVEL% neq 0 (
-  echo ERROR: you have uncommitted changes.
-  echo Please commit or stash before running evening push.
-  echo.
-  git status --short
-  echo.
-  pause
-  exit /b 1
+REM Step 1: Check for uncommitted changes
+for /f %%i in ('git status --porcelain ^| find /c /v ""') do set CHANGES=%%i
+
+if %CHANGES%==0 (
+    echo No changes to commit. Nothing to push.
+    echo.
+    pause
+    exit /b 0
 )
 
-set "CURRENT_BRANCH="
-git rev-parse --abbrev-ref HEAD > .git-branch-temp.txt 2>nul
-set /p CURRENT_BRANCH=<.git-branch-temp.txt
-del .git-branch-temp.txt >nul 2>nul
+echo Found %CHANGES% changed files.
+echo.
 
-if /I not "%CURRENT_BRANCH%"=="feature/tomer" (
-  echo ERROR: You must run this from branch "feature/tomer".
-  echo Current branch: "%CURRENT_BRANCH%"
-  echo.
-  pause
-  exit /b 1
-)
+REM Step 2: Commit changes on your feature branch
+echo [1/6] Committing changes on %BRANCH%...
+git add .
+git commit -m "Daily push: %date% - %BRANCH%"
 
-echo Checking out Test-Main...
+REM Step 3: Push your feature branch
+echo [2/6] Pushing %BRANCH% to remote...
+git push origin %BRANCH%
+
+REM Step 4: Switch to Test-Main and pull latest
+echo [3/6] Switching to Test-Main...
 git checkout Test-Main
-if %ERRORLEVEL% neq 0 (
-  echo.
-  echo ERROR: failed to checkout Test-Main.
-  echo.
-  pause
-  exit /b 1
-)
-
-echo.
-echo Pulling latest origin/Test-Main...
 git pull origin Test-Main
-if %ERRORLEVEL% neq 0 (
-  echo.
-  echo ERROR: git pull failed.
-  echo Resolve conflicts, then run evening-push.bat again.
-  echo.
-  pause
-  exit /b 1
+
+REM Step 5: Merge your branch into Test-Main
+echo [4/6] Merging %BRANCH% into Test-Main...
+git merge %BRANCH% --no-edit
+if errorlevel 1 (
+    echo.
+    echo *** MERGE CONFLICT! ***
+    echo Fix the conflicts in the files, then run:
+    echo   git add .
+    echo   git commit -m "Resolved merge conflicts"
+    echo   git push origin Test-Main
+    echo   git checkout %BRANCH%
+    echo.
+    pause
+    exit /b 1
 )
 
-echo.
-echo Merging feature/tomer into Test-Main...
-git merge feature/tomer
-if %ERRORLEVEL% neq 0 (
-  echo.
-  echo ERROR: merge failed (possible conflict).
-  echo Resolve conflicts, then run evening-push.bat again.
-  echo.
-  pause
-  exit /b 1
-)
-
-echo.
-echo Pushing Test-Main to origin...
+REM Step 6: Push Test-Main and go back to your branch
+echo [5/6] Pushing Test-Main...
 git push origin Test-Main
-if %ERRORLEVEL% neq 0 (
-  echo.
-  echo ERROR: git push failed.
-  echo.
-  pause
-  exit /b 1
-)
+
+echo [6/6] Switching back to %BRANCH%...
+git checkout %BRANCH%
 
 echo.
-echo Switching back to feature/tomer...
-git checkout feature/tomer
-if %ERRORLEVEL% neq 0 (
-  echo.
-  echo WARNING: pushed successfully, but failed to checkout feature/tomer.
-  echo Please switch back manually.
-  echo.
-  pause
-  exit /b 1
-)
-
+echo ==========================================
+echo EVENING PUSH COMPLETE!
+echo Your code is now on Test-Main.
+echo Railway + Netlify will auto-deploy.
+echo You are back on: %BRANCH%
+echo ==========================================
 echo.
-echo DONE: Test-Main pushed. Staging deploy should start automatically.
 pause
