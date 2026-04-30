@@ -2,11 +2,20 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import { execSync } from 'child_process';
 import { initDatabase } from './db';
 import pricelistsRouter from './routes/pricelists';
 import generateRouter from './routes/api/generate';
 import tableauRouter from './routes/tableau';
 import deployRouter from './routes/deploy';
+
+const getCommitHash = (): string => {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+  } catch {
+    return 'unknown';
+  }
+};
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -47,9 +56,19 @@ app.use('/api/generate', generateRouter);
 app.use('/api/tableau', tableauRouter);
 app.use('/api/deploy', deployRouter);
 
-// Health check
+// Health check + diagnostics
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const storageRoot = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(process.cwd(), 'data');
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    commit: getCommitHash(),
+    env: process.env.NODE_ENV || 'development',
+    storageRoot,
+    dbPath: path.join(storageRoot, 'database.sqlite'),
+    pricelistsPath: path.join(storageRoot, 'uploads', 'pricelists'),
+    generatedPath: path.join(storageRoot, 'uploads', 'generated'),
+  });
 });
 
 // Error handling
