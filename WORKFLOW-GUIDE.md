@@ -1,6 +1,31 @@
-# Daily Git Workflow Guide
+# Logivice Invoice Processor — Developer Workflow Guide
 
-## Setup (One-time for each developer)
+Last updated: 2026-04-30
+
+## Environments
+
+| Layer | URL | Platform |
+|---|---|---|
+| Frontend (staging) | https://logivice-staging.netlify.app | Netlify |
+| Backend (staging + prod) | https://logivice-api-production.up.railway.app | Railway |
+| Health + diagnostics | https://logivice-api-production.up.railway.app/api/health | Railway |
+
+## Storage (Railway persistent volume)
+All data survives deployments:
+- DB: `/app/data/database.sqlite`
+- Pricelist templates: `/app/data/uploads/pricelists/`
+- Generated invoices: `/app/data/uploads/generated/`
+
+## Branch Structure
+
+```
+main              ← Production (don't touch directly)
+Test-Main         ← Staging — auto-deploys to Railway + Netlify on push
+feature/jacob-*   ← Jacob's work
+feature/tomer     ← Tomer's work
+```
+
+## Setup (One-time per developer)
 
 ### Jacob:
 ```bash
@@ -9,15 +34,14 @@ git checkout feature/jacob-sensos-qty
 
 ### Tomer:
 ```bash
-git clone https://github.com/yacov88b2-lab/Logivice-invoice-progrem-.git
-cd Logivice-invoice-progrem-
 git checkout feature/tomer
+git pull origin Test-Main
 npm install
 ```
 
 ## Daily Workflow
 
-### Morning (Start of day):
+### Morning (start of day):
 Double-click **`morning-pull.bat`**
 
 This will:
@@ -26,36 +50,41 @@ This will:
 3. You now have everyone's latest changes
 
 ### During the day:
-- Work normally on your feature branch
+- Work on your feature branch only
 - Commit as often as you like
-- Your commits stay LOCAL (not deployed)
+- Commits stay local until evening push
 
-### Evening (End of day):
+### Evening (end of day):
 Double-click **`evening-push.bat`**
 
 This will:
 1. Commit any uncommitted changes
 2. Merge your branch into Test-Main
-3. Push to GitHub
-4. Railway (backend) + Netlify (frontend) auto-deploy
-5. Switch you back to your feature branch
-
-## Branch Structure
-
-```
-main              ← Production (don't touch)
-Test-Main         ← Staging/shared branch (auto-deploys)
-feature/jacob-*   ← Jacob's work
-feature/tomer     ← Tomer's work
-```
+3. Push to GitHub → Railway + Netlify auto-deploy
 
 ## Rules
 1. **NEVER work directly on Test-Main or main**
-2. Always use morning-pull.bat to get latest changes
-3. Always use evening-push.bat to share your work
-4. If you get a merge conflict, ask for help
+2. Always run morning-pull.bat to get latest changes before starting
+3. Always run evening-push.bat to share your work
+4. Each developer owns their customer's billing rules file (see Phase 8)
+5. If you get a merge conflict, ask for help
 
-## URLs
-- **Frontend (staging):** https://logivice-staging.netlify.app
-- **Backend (Railway):** https://logivice-api-production.up.railway.app
-- **Backend health:** https://logivice-api-production.up.railway.app/api/health
+## Running Tests
+```bash
+npm test
+```
+22 tests covering: DataMapper, TemplateAnalyzer, Tableau date parsing, live health endpoints.
+
+## Verifying a Deployment
+Hit the health endpoint to confirm what is deployed:
+```
+https://logivice-api-production.up.railway.app/api/health
+```
+Returns: commit hash, storage paths, environment name.
+
+## Per-Customer Billing Rules
+Each customer's billing logic lives in `server/services/qtyFiller.ts`.
+- **Jacob** owns: Sensos NL rules
+- **Tomer** owns: Afimilk NZ, AVT HKG rules
+- Do not edit another developer's customer section without coordinating first
+- Phase 8 will split these into separate files per customer
