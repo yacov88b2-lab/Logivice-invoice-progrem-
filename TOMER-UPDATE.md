@@ -37,9 +37,15 @@ Now returns the deployed commit hash, storage paths, and environment — useful 
 ## What you need to do
 
 ### Step 1 — Pull the latest Test-Main into your branch
+
+**Option A (easiest) — Double-click in Windows Explorer:**
+Go to your project folder in Windows Explorer and double-click `morning-pull.bat`.
+⚠️ Must be double-clicked — do NOT run it from Git Bash, it won't work there.
+
+**Option B — From Git Bash terminal:**
 ```bash
-git checkout feature/tomer
-git pull origin Test-Main
+git fetch origin
+git merge origin/Test-Main --no-edit
 npm install
 ```
 Run `npm install` because new packages were added (Vitest for testing).
