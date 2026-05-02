@@ -432,9 +432,6 @@ export class QTYFiller {
         }
       }
 
-      // Patch invoice QTY cells without rewriting the workbook (preserve styles/formulas)
-      await this.patchInvoiceQtyOpenXml(zip, parser, builder, wbObj, templateStructure, quantities, filledRows, errors);
-
       zip.file(wbXmlPath, builder.build(wbObj));
 
       const outBuffer = await zip.generateAsync({ type: 'nodebuffer' });

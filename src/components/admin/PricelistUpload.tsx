@@ -37,7 +37,6 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
         setOptionsLoading(true);
         const data = await api.getTableauOptions();
         if (!mounted) return;
-<<<<<<< Updated upstream
         const rawCustomers = data.customers || [];
         const normalizedCustomers = rawCustomers.map(c => {
           const v = String(c || '').trim();
@@ -45,9 +44,6 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
           return v;
         });
         setCustomers(normalizedCustomers);
-=======
-        setCustomers(data.customers || []);
->>>>>>> Stashed changes
         setWarehouses(data.warehouses || []);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -63,7 +59,6 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
     };
   }, []);
 
-<<<<<<< Updated upstream
   useEffect(() => {
     const customer = String(formData.customer_name || '').trim();
     if (!customer) return;
@@ -80,9 +75,6 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
       setFormData(prev => ({ ...prev, warehouse_code: wh }));
     }
   }, [formData.customer_name, formData.warehouse_code]);
-
-=======
->>>>>>> Stashed changes
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -91,7 +83,6 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
       return;
     }
 
-<<<<<<< Updated upstream
     const customerTokens = String(formData.customer_name || '')
       .trim()
       .split(/[\s-]+/)
@@ -101,12 +92,6 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
     const nameRegex = new RegExp(`^${customerPattern}\\s*[–-]\\s*Template\\s+\\d{4}$`);
     if (!nameRegex.test(formData.name.trim())) {
       setError('Pricelist Name need to be in a format of “Customer name – Template YYYY”.');
-=======
-    const escapedCustomer = formData.customer_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const nameRegex = new RegExp(`^${escapedCustomer}\\s*[–-]\\s*Template\\s+\\d{4}$`);
-    if (!nameRegex.test(formData.name.trim())) {
-      setError('Pricelist Name must be in format: Customer name – Template YYYY');
->>>>>>> Stashed changes
       return;
     }
 
@@ -170,14 +155,10 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             <div className="flex gap-2">
               <select
                 value={formData.customer_name}
-<<<<<<< Updated upstream
                 onChange={(e) => {
                   const customer = e.target.value;
                   setFormData(prev => ({ ...prev, customer_name: customer }));
                 }}
-=======
-                onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
->>>>>>> Stashed changes
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 disabled={optionsLoading || loading}
               >
@@ -214,11 +195,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
                 value={formData.warehouse_code}
                 onChange={(e) => setFormData({ ...formData, warehouse_code: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-<<<<<<< Updated upstream
                 disabled={optionsLoading || loading || ['Afimilk', 'Afimilk New Zealand'].includes(String(formData.customer_name || '').trim())}
-=======
-                disabled={optionsLoading || loading}
->>>>>>> Stashed changes
               >
                 <option value="">Select warehouse...</option>
                 {sortedWarehouses.map(w => (
