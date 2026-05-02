@@ -47,8 +47,6 @@ echo - Frontend: http://localhost:5173
 echo - API:      http://localhost:3001
 echo.
 
-start "" "http://localhost:5173"
-
 call npm run dev
 
 echo.
