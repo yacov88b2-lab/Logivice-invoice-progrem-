@@ -10,6 +10,9 @@ import tableauRouter from './routes/tableau';
 import deployRouter from './routes/deploy';
 
 const getCommitHash = (): string => {
+  if (process.env.RAILWAY_GIT_COMMIT_SHA) {
+    return process.env.RAILWAY_GIT_COMMIT_SHA.slice(0, 7);
+  }
   try {
     return execSync('git rev-parse --short HEAD', { stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
   } catch {
