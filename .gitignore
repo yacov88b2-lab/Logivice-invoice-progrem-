@@ -21,10 +21,14 @@ dist-ssr
 data/
 *.sqlite
 *.sqlite3
+*.sqlite-shm
+*.sqlite-wal
 *.db
 
-# Uploads
+# Uploads and generated files
 uploads/
+*.xlsx
+*.xls
 
 # Editor directories and files
 .vscode/*
