@@ -8,8 +8,7 @@ export function PricelistManager() {
   const [showUpload, setShowUpload] = useState(false);
   const [editingPricelist, setEditingPricelist] = useState<Pricelist | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  
-  // Deploy state
+
   const [deployStatus, setDeployStatus] = useState<{
     loading: boolean;
     canDeploy: boolean;
@@ -24,7 +23,6 @@ export function PricelistManager() {
     lastDeployResult: null
   });
 
-  // Check deploy status on mount
   useEffect(() => {
     checkDeployStatus();
   }, []);
@@ -74,17 +72,17 @@ export function PricelistManager() {
     if (!confirm('Deploy Test-Main to Production (main)?\n\nThis will merge all Test-Main changes to main and push to GitHub.')) {
       return;
     }
-    
+
     setDeployStatus(prev => ({ ...prev, loading: true, lastDeployResult: null }));
-    
+
     try {
       const response = await fetch(`${API_BASE}/deploy/deploy-to-production`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         setDeployStatus(prev => ({
           ...prev,
@@ -94,14 +92,14 @@ export function PricelistManager() {
           commitsBehind: 0,
           pendingCommits: []
         }));
-        alert('✅ Deployed successfully!\n\nTest-Main has been merged to main and pushed to GitHub.\nProduction site will update automatically.');
+        alert('Deployed successfully!\n\nTest-Main has been merged to main and pushed to GitHub.\nProduction site will update automatically.');
       } else {
         setDeployStatus(prev => ({
           ...prev,
           loading: false,
           lastDeployResult: 'error: ' + data.error
         }));
-        alert('❌ Deploy failed:\n' + data.error);
+        alert('Deploy failed:\n' + data.error);
       }
     } catch (error) {
       setDeployStatus(prev => ({
@@ -109,7 +107,7 @@ export function PricelistManager() {
         loading: false,
         lastDeployResult: 'error: ' + (error as Error).message
       }));
-      alert('❌ Deploy failed:\n' + (error as Error).message);
+      alert('Deploy failed:\n' + (error as Error).message);
     }
   };
 
@@ -138,7 +136,6 @@ export function PricelistManager() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Deploy Button */}
           {deployStatus.canDeploy && (
             <button
               onClick={handleDeploy}
@@ -155,7 +152,7 @@ export function PricelistManager() {
                 </>
               ) : (
                 <>
-                  🚀 Deploy to Production
+                  Deploy to Production
                   <span className="bg-green-800 px-2 py-0.5 rounded text-xs">
                     {deployStatus.commitsBehind} commit{deployStatus.commitsBehind !== 1 ? 's' : ''}
                   </span>
@@ -172,26 +169,25 @@ export function PricelistManager() {
         </div>
       </div>
 
-      {/* Deploy Status Banner */}
       {deployStatus.lastDeployResult && deployStatus.lastDeployResult.startsWith('success') && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-800">
-          ✅ <strong>Successfully deployed to production!</strong> Test-Main changes are now in main.
+          <strong>Successfully deployed to production!</strong> Test-Main changes are now in main.
         </div>
       )}
       {deployStatus.lastDeployResult && deployStatus.lastDeployResult.startsWith('error') && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
-          ❌ <strong>Deploy failed:</strong> {deployStatus.lastDeployResult.replace('error: ', '')}
+          <strong>Deploy failed:</strong> {deployStatus.lastDeployResult.replace('error: ', '')}
         </div>
       )}
 
       {showUpload ? (
-        <PricelistUpload 
-          pricelist={editingPricelist} 
-          onClose={handleCloseUpload} 
+        <PricelistUpload
+          pricelist={editingPricelist}
+          onClose={handleCloseUpload}
         />
       ) : (
         <div className="bg-white rounded-lg shadow">
-          <PricelistList 
+          <PricelistList
             onEdit={handleEdit}
             onRefresh={handleRefresh}
             refreshTrigger={refreshTrigger}

@@ -370,7 +370,7 @@ export function UserDashboard() {
               onClick={handleReset}
               className="text-gray-600 hover:text-gray-900"
             >
-              ← Back
+              Back
             </button>
           </div>
 
@@ -404,7 +404,7 @@ export function UserDashboard() {
           {preview.unmatched.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <h4 className="font-semibold text-yellow-800 mb-2">
-                ⚠️ {preview.unmatched.length} Unmatched Transactions
+                Warning: {preview.unmatched.length} Unmatched Transactions
               </h4>
               <div className="text-sm text-yellow-700 space-y-2">
                 {preview.unmatched.slice(0, 5).map((u, i) => (
@@ -434,7 +434,7 @@ export function UserDashboard() {
           {preview.summary.matched > 0 && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <h4 className="font-semibold text-green-800 mb-2">
-                ✓ {preview.summary.matched} Matched Transactions
+                {preview.summary.matched} Matched Transactions
               </h4>
               <p className="text-sm text-green-700">
                 These transactions will be aggregated and filled into the pricelist:
@@ -479,13 +479,13 @@ export function UserDashboard() {
         <div className="bg-white rounded-lg shadow p-6 space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold text-green-700">
-              ✓ Invoice Generated Successfully
+              Invoice Generated Successfully
             </h3>
             <button
               onClick={handleReset}
               className="text-gray-600 hover:text-gray-900"
             >
-              Start New →
+              Start New
             </button>
           </div>
 

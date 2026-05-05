@@ -5,6 +5,8 @@ const TABLEAU_BASE_URL = process.env.TABLEAU_BASE_URL || 'https://dub01.online.t
 const TABLEAU_TOKEN_NAME = process.env.TABLEAU_TOKEN_NAME || '';
 const TABLEAU_TOKEN_SECRET = process.env.TABLEAU_TOKEN_VALUE || '';
 const TABLEAU_SITE = process.env.TABLEAU_SITE || 'logivice';
+const ALLOW_MOCK_DATA =
+  process.env.ALLOW_MOCK_DATA === 'true' || process.env.NODE_ENV !== 'production';
 
 export class TableauAPIClient {
   private baseUrl: string;
@@ -13,6 +15,21 @@ export class TableauAPIClient {
 
   constructor() {
     this.baseUrl = TABLEAU_BASE_URL;
+  }
+
+  private getFallbackTransactions(
+    reason: string,
+    startDate: string,
+    endDate: string,
+    customer?: string,
+    warehouse?: string
+  ): Transaction[] {
+    if (!ALLOW_MOCK_DATA) {
+      throw new Error(`Tableau data unavailable: ${reason}. Mock data is disabled in production.`);
+    }
+
+    console.warn(`[Tableau] ${reason}; using mock data because ALLOW_MOCK_DATA is enabled.`);
+    return this.getMockTransactions(startDate, endDate, customer, warehouse);
   }
 
   async authenticate(): Promise<string | null> {
@@ -645,9 +662,8 @@ export class TableauAPIClient {
       // Step 1: Get Billing 2025 project
       const billingProject = await this.getBillingProject();
       if (!billingProject) {
-        console.log('Billing 2025 project not found, using mock data');
         return { 
-          transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
+          transactions: this.getFallbackTransactions('Billing 2025 project not found', startDate, endDate, customer, warehouse),
           rawViewData,
           filteredViewData 
         };
@@ -656,9 +672,8 @@ export class TableauAPIClient {
 
       // Step 2: Get customer subproject
       if (!customer) {
-        console.log('No customer specified, using mock data');
         return { 
-          transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
+          transactions: this.getFallbackTransactions('No customer specified', startDate, endDate, customer, warehouse),
           rawViewData,
           filteredViewData 
         };
@@ -666,9 +681,8 @@ export class TableauAPIClient {
 
       const customerProject = await this.getCustomerProject(billingProject.id, customer);
       if (!customerProject) {
-        console.log(`Customer project '${customer}' not found, using mock data`);
         return { 
-          transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
+          transactions: this.getFallbackTransactions(`Customer project '${customer}' not found`, startDate, endDate, customer, warehouse),
           rawViewData,
           filteredViewData 
         };
@@ -678,9 +692,8 @@ export class TableauAPIClient {
       // Step 3: Get workbooks (prefer those under the customer project)
       const workbooks = await this.getCustomerWorkbooks(customer, warehouse, customerProject.id);
       if (workbooks.length === 0) {
-        console.log('No workbooks found, using mock data');
         return { 
-          transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
+          transactions: this.getFallbackTransactions('No workbooks found', startDate, endDate, customer, warehouse),
           rawViewData,
           filteredViewData 
         };
@@ -730,9 +743,8 @@ export class TableauAPIClient {
       }
 
       if (allTransactions.length === 0) {
-        console.log('No data from Tableau views, using mock data');
         return { 
-          transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
+          transactions: this.getFallbackTransactions('No data from Tableau views', startDate, endDate, customer, warehouse),
           rawViewData,
           filteredViewData 
         };
@@ -744,7 +756,7 @@ export class TableauAPIClient {
     } catch (error) {
       console.error('Error fetching from Tableau:', error);
       return { 
-        transactions: this.getMockTransactions(startDate, endDate, customer, warehouse),
+        transactions: this.getFallbackTransactions((error as Error).message || 'Unknown Tableau error', startDate, endDate, customer, warehouse),
         rawViewData,
         filteredViewData 
       };

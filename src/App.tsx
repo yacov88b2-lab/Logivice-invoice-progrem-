@@ -7,7 +7,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -45,15 +44,13 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
         {activeTab === 'user' ? <UserDashboard /> : <PricelistManager />}
       </main>
 
-      {/* Footer */}
       <footer className="bg-white border-t mt-12">
         <div className="max-w-7xl mx-auto px-4 py-4 text-center text-sm text-gray-600">
-          Logivice Invoice Processor © 2026
+          Logivice Invoice Processor (c) 2026
         </div>
       </footer>
     </div>

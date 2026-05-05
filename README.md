@@ -8,7 +8,7 @@ A universal Excel processing application for logistics billing. Administrators u
 - **Template Analyzer**: Auto-detects Excel structure (columns, sheets, line items)
 - **Tableau API Integration**: Fetches transaction data for billing periods
 - **Smart Matching**: Maps API transactions to pricelist line items
-- **QTY Filling**: Fills QTY fields and recalculates Totals (QTY × Rate)
+- **QTY Filling**: Fills QTY fields and recalculates Totals (QTY x Rate)
 - **Error Handling**: Shows unmatched transactions and ambiguous mappings
 - **Audit Logging**: Tracks all operations with before/after values
 - **Excel Export**: Preserves formatting and formulas in output
@@ -63,7 +63,7 @@ npm run build
 1. Go to **Admin** tab
 2. Click **Upload New Pricelist**
 3. Enter:
-   - Pricelist Name (format: `Customer name – Template YYYY`, e.g. `Afimilk – Template 2026`)
+   - Pricelist Name (format: `Customer name - Template YYYY`, e.g. `Afimilk - Template 2026`)
    - Customer Name (select from dropdown)
    - Warehouse Code (select from dropdown)
 4. Upload Excel template file
@@ -92,7 +92,7 @@ The app expects pricelist Excel files with:
 | E | Remark/Description |
 | F | Rate (pre-existing, must NOT be changed) |
 | G | QTY (to be filled from API) |
-| H | Total (auto-recalculated as QTY × Rate) |
+| H | Total (auto-recalculated as QTY x Rate) |
 
 Header row is auto-detected by looking for "Rate", "QTY", "Total" keywords.
 
@@ -110,13 +110,13 @@ Header row is auto-detected by looking for "Rate", "QTY", "Total" keywords.
 
 ## Tableau API Configuration
 
-Configure Tableau credentials via environment variables (see `.env`).
+Configure Tableau credentials via environment variables (see `.env.example`).
 
 - Base URL: e.g. `https://dub01.online.tableau.com`
 - Site: e.g. `logivice`
 - Token name/value: stored in `.env` (do not commit tokens)
 
-For development, mock transaction data may be used. In production, implement actual Tableau REST API calls in `server/services/tableauAPI.ts`.
+For development, mock transaction data may be used when Tableau is unavailable. In production, keep `ALLOW_MOCK_DATA=false` so invoice generation fails instead of using fake transactions.
 
 ## Afimilk Excel Generation Notes
 
@@ -132,25 +132,25 @@ Afimilk invoice generation uses an OpenXML patch approach (zip-level edits) to p
 
 ## Architecture
 
-```
+```text
 invoice-processor/
-├── server/
-│   ├── db.ts                 # SQLite database setup
-│   ├── models/               # Database models
-│   ├── routes/               # API routes
-│   └── services/             # Business logic
-│       ├── templateAnalyzer.ts
-│       ├── dataMapper.ts
-│       ├── qtyFiller.ts
-│       └── tableauAPI.ts
-├── src/
-│   ├── components/
-│   │   ├── admin/            # PricelistManager, PricelistList, PricelistUpload
-│   │   └── user/             # UserDashboard
-│   ├── api.ts                # API client
-│   ├── types.ts              # TypeScript types
-│   └── App.tsx               # Main app
-└── uploads/                  # Uploaded files storage
+|-- server/
+|   |-- db.ts                 # SQLite database setup
+|   |-- models/               # Database models
+|   |-- routes/               # API routes
+|   `-- services/             # Business logic
+|       |-- templateAnalyzer.ts
+|       |-- dataMapper.ts
+|       |-- qtyFiller.ts
+|       `-- tableauAPI.ts
+|-- src/
+|   |-- components/
+|   |   |-- admin/            # PricelistManager, PricelistList, PricelistUpload
+|   |   `-- user/             # UserDashboard
+|   |-- api.ts                # API client
+|   |-- types.ts              # TypeScript types
+|   `-- App.tsx               # Main app
+`-- uploads/                  # Uploaded files storage
 ```
 
 ## Data Flow
@@ -162,7 +162,7 @@ invoice-processor/
 5. DataMapper matches transactions to line items by Segment+Clause+Category+UOM+Remark
 6. Validator identifies unmatched/ambiguous items
 7. User reviews and confirms
-8. QTYFiller fills QTY column and recalculates Total = QTY × Rate
+8. QTYFiller fills QTY column and recalculates Total = QTY x Rate
 9. ExcelGenerator creates output preserving formatting
 10. User downloads invoice
 11. AuditLogger records operation
@@ -170,6 +170,7 @@ invoice-processor/
 ## Error Handling
 
 The app handles these error cases:
+
 - **Unmatched transactions**: No matching line item found
 - **Ambiguous matches**: Multiple possible line items
 - **Missing files**: Pricelist file not found

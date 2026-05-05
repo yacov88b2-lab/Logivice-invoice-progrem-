@@ -27,7 +27,7 @@ export async function fillInvoice(
   expectedInboundPeriod?: { mm: string; yyyy: string } | null
 ): Promise<FillResult> {
   const customer = detectCustomer(customerName);
-  console.log(`[Rules] Customer "${customerName}" → handler: ${customer}`);
+  console.log(`[Rules] Customer "${customerName}" -> handler: ${customer}`);
 
   if (customer === 'afimilk') {
     return fillAfimilkPreserveTemplate(
