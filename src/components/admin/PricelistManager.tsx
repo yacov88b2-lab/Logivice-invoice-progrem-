@@ -128,19 +128,22 @@ export function PricelistManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Pricelist Management</h2>
-          <p className="text-gray-600 mt-1">
-            Upload and manage customer pricelist templates
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#58a967]">
+            Template Library
+          </p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">Pricelists</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Upload and manage the Excel templates used for customer monthly invoices.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {deployStatus.canDeploy && (
             <button
               onClick={handleDeploy}
               disabled={deployStatus.loading}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="flex items-center gap-2 rounded bg-[#58a967] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#43864f] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {deployStatus.loading ? (
                 <>
@@ -153,7 +156,7 @@ export function PricelistManager() {
               ) : (
                 <>
                   Deploy to Production
-                  <span className="bg-green-800 px-2 py-0.5 rounded text-xs">
+                  <span className="rounded bg-green-800 px-2 py-0.5 text-xs">
                     {deployStatus.commitsBehind} commit{deployStatus.commitsBehind !== 1 ? 's' : ''}
                   </span>
                 </>
@@ -162,20 +165,20 @@ export function PricelistManager() {
           )}
           <button
             onClick={() => setShowUpload(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="rounded bg-[#28258b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#1f1d70]"
           >
-            + Upload New Pricelist
+            Upload Pricelist
           </button>
         </div>
       </div>
 
       {deployStatus.lastDeployResult && deployStatus.lastDeployResult.startsWith('success') && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-800">
+        <div className="rounded border border-green-200 bg-green-50 p-4 text-green-800">
           <strong>Successfully deployed to production!</strong> Test-Main changes are now in main.
         </div>
       )}
       {deployStatus.lastDeployResult && deployStatus.lastDeployResult.startsWith('error') && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+        <div className="rounded border border-red-200 bg-red-50 p-4 text-red-800">
           <strong>Deploy failed:</strong> {deployStatus.lastDeployResult.replace('error: ', '')}
         </div>
       )}
@@ -186,7 +189,7 @@ export function PricelistManager() {
           onClose={handleCloseUpload}
         />
       ) : (
-        <div className="bg-white rounded-lg shadow">
+        <div className="rounded border border-slate-200 bg-white shadow-sm">
           <PricelistList
             onEdit={handleEdit}
             onRefresh={handleRefresh}

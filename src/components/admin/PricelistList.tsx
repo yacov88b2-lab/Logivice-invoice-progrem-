@@ -50,16 +50,16 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
   };
 
   if (loading) {
-    return <div className="p-8 text-center">Loading pricelists...</div>;
+    return <div className="p-8 text-center text-sm text-slate-600">Loading pricelists...</div>;
   }
 
   if (error) {
     return (
-      <div className="p-8 text-center text-red-600">
+      <div className="p-8 text-center text-sm text-red-600">
         {error}
         <button 
           onClick={fetchPricelists}
-          className="ml-4 text-blue-600 hover:underline"
+          className="ml-4 font-semibold text-[#28258b] hover:underline"
         >
           Retry
         </button>
@@ -69,8 +69,9 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
 
   if (pricelists.length === 0) {
     return (
-      <div className="p-8 text-center text-gray-500">
-        No pricelists found. Upload one to get started.
+      <div className="p-10 text-center text-sm text-slate-500">
+        <div className="text-base font-semibold text-slate-800">No pricelists yet</div>
+        <div className="mt-1">Upload a customer template to start generating monthly invoices.</div>
       </div>
     );
   }
@@ -79,17 +80,17 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
     <div className="overflow-x-auto">
       {confirmDeleteId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white shadow-lg">
+          <div className="w-full max-w-md rounded bg-white shadow-lg">
             <div className="p-6">
-              <div className="text-base font-semibold text-gray-900">
+              <div className="text-base font-semibold text-slate-950">
                 You are about to delete a customer price list; this action is permanent.
               </div>
-              <div className="mt-2 text-sm text-gray-700">Are you sure you want to continue?</div>
+              <div className="mt-2 text-sm text-slate-700">Are you sure you want to continue?</div>
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setConfirmDeleteId(null)}
-                  className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  className="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   No
                 </button>
@@ -101,7 +102,7 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
                     await handleDelete(id);
                   }}
                   disabled={deleting === confirmDeleteId}
-                  className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                  className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                 >
                   {deleting === confirmDeleteId ? 'Deleting...' : 'Yes'}
                 </button>
@@ -111,9 +112,9 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
         </div>
       )}
 
-      <table className="w-full border-collapse">
+      <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="bg-gray-100 border-b">
+          <tr className="border-b border-slate-200 bg-slate-100 text-slate-700">
             <th className="p-4 text-left font-semibold">Name</th>
             <th className="p-4 text-left font-semibold">Customer</th>
             <th className="p-4 text-left font-semibold">Warehouse</th>
@@ -124,34 +125,36 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
         </thead>
         <tbody>
           {pricelists.map((p) => (
-            <tr key={p.id} className="border-b hover:bg-gray-50">
-              <td className="p-4 font-medium">{p.name}</td>
+            <tr key={p.id} className="border-b border-slate-200 hover:bg-slate-50">
+              <td className="p-4 font-semibold text-slate-950">{p.name}</td>
               <td className="p-4">{p.customer_name}</td>
-              <td className="p-4">{p.warehouse_code}</td>
+              <td className="p-4">
+                <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{p.warehouse_code}</span>
+              </td>
               <td className="p-4">
                 {p.template_structure?.sheets?.length || 0} sheets
               </td>
-              <td className="p-4 text-sm text-gray-600">
+              <td className="p-4 text-slate-600">
                 {new Date(p.created_at).toLocaleDateString()}
               </td>
               <td className="p-4">
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDownload(p.id)}
-                    className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                    className="rounded bg-[#28258b]/10 px-3 py-1 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15"
                   >
                     Download
                   </button>
                   <button
                     onClick={() => onEdit(p)}
-                    className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                    className="rounded bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => setConfirmDeleteId(p.id)}
                     disabled={deleting === p.id || confirmDeleteId !== null}
-                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                    className="rounded bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-200 disabled:opacity-50"
                   >
                     {deleting === p.id ? 'Deleting...' : 'Delete'}
                   </button>

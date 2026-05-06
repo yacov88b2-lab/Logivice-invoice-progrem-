@@ -89,9 +89,9 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
       .filter(Boolean)
       .map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const customerPattern = customerTokens.join('[\\s-]+');
-    const nameRegex = new RegExp(`^${customerPattern}\\s*[–-]\\s*Template\\s+\\d{4}$`);
+    const nameRegex = new RegExp(`^${customerPattern}\\s*[-]\\s*Template\\s+\\d{4}$`);
     if (!nameRegex.test(formData.name.trim())) {
-      setError('Pricelist Name need to be in a format of “Customer name – Template YYYY”.');
+      setError('Pricelist name must use the format "Customer name - Template YYYY".');
       return;
     }
 
@@ -128,10 +128,15 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold mb-4">
-        {isEditing ? 'Edit Pricelist' : 'Upload New Pricelist'}
-      </h3>
+    <div className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-5 border-b border-slate-200 pb-4">
+        <h3 className="text-lg font-semibold text-slate-950">
+          {isEditing ? 'Edit Pricelist' : 'Upload Pricelist'}
+        </h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Keep customer, warehouse, and template naming consistent so invoice generation can auto-select the right file.
+        </p>
+      </div>
       
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -142,12 +147,12 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="e.g., Afimilk – Template 2026"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+            placeholder="e.g., Afimilk - Template 2026"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Customer Name *
@@ -159,7 +164,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
                   const customer = e.target.value;
                   setFormData(prev => ({ ...prev, customer_name: customer }));
                 }}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
                 disabled={optionsLoading || loading}
               >
                 <option value="">Select customer...</option>
@@ -179,7 +184,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
                   setFormData(prev => ({ ...prev, customer_name: value }));
                 }}
                 disabled={loading}
-                className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                className="rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Add
               </button>
@@ -194,7 +199,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
               <select
                 value={formData.warehouse_code}
                 onChange={(e) => setFormData({ ...formData, warehouse_code: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
                 disabled={optionsLoading || loading || ['Afimilk', 'Afimilk New Zealand'].includes(String(formData.customer_name || '').trim())}
               >
                 <option value="">Select warehouse...</option>
@@ -214,7 +219,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
                   setFormData(prev => ({ ...prev, warehouse_code: value }));
                 }}
                 disabled={loading}
-                className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                className="rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Add
               </button>
@@ -230,7 +235,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             type="file"
             accept=".xlsx,.xls"
             onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="w-full px-3 py-2 border rounded-lg file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm file:mr-4 file:rounded file:border-0 file:bg-[#28258b]/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#28258b] hover:file:bg-[#28258b]/15"
           />
           <p className="text-sm text-gray-500 mt-1">
             Upload an Excel file with invoice template structure
@@ -238,7 +243,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
         </div>
 
         {error && (
-          <div className="bg-red-50 text-red-700 p-3 rounded-lg">
+          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {error}
           </div>
         )}
@@ -247,7 +252,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
           <button
             type="submit"
             disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? 'Saving...' : (isEditing ? 'Update Pricelist' : 'Upload Pricelist')}
           </button>
@@ -255,7 +260,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+            className="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
             Cancel
           </button>
