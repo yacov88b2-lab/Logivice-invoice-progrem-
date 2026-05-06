@@ -197,6 +197,12 @@ export function UserDashboard() {
     setError(null);
   };
 
+  const handleBackToPreview = () => {
+    if (preview) {
+      setStep('preview');
+    }
+  };
+
   const handleDownloadTotal = () => {
     if (!preview || !selectedPricelist || !startDate || !endDate) return;
 
@@ -647,6 +653,14 @@ export function UserDashboard() {
           )}
 
           <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleBackToPreview}
+              disabled={loading}
+              className="flex-1 rounded border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Back to Review
+            </button>
             <button
               type="button"
               onClick={handleDownloadTotal}
