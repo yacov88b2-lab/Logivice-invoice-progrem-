@@ -17,17 +17,23 @@ export function UserDashboard() {
   const [step, setStep] = useState<'select' | 'preview' | 'result'>('select');
   const [billingCycle, setBillingCycle] = useState<'custom' | 'full_month'>('full_month');
 
-  useEffect(() => {
+  const loadPricelists = async () => {
     setLoadingPricelists(true);
     setError(null);
 
-    api.getPricelists()
-      .then(data => setPricelists(data))
-      .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : 'Failed to load pricelists';
-        setError(message);
-      })
-      .finally(() => setLoadingPricelists(false));
+    try {
+      const data = await api.getPricelists();
+      setPricelists(data);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load pricelists';
+      setError(message);
+    } finally {
+      setLoadingPricelists(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPricelists();
   }, []);
 
   // Auto-set dates when billing cycle changes
@@ -77,6 +83,14 @@ export function UserDashboard() {
   const selectedPricelistRecord = useMemo(
     () => pricelists.find(p => p.id === selectedPricelist),
     [pricelists, selectedPricelist]
+  );
+
+  const previewMatchRate = useMemo(
+    () => {
+      if (!preview) return 0;
+      return Math.round((preview.summary.matched / Math.max(1, preview.summary.totalTransactions)) * 100);
+    },
+    [preview]
   );
 
   const readyToPreview = useMemo(
@@ -446,7 +460,15 @@ export function UserDashboard() {
             )}
             {error && (
               <div className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {error}
+                <div>{error}</div>
+                <button
+                  type="button"
+                  onClick={loadPricelists}
+                  disabled={loadingPricelists}
+                  className="mt-3 inline-flex items-center rounded bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Retry loading pricelists
+                </button>
               </div>
             )}
 
@@ -527,6 +549,23 @@ export function UserDashboard() {
                 {preview.summary.unmatched}
               </div>
               <div className="text-sm text-amber-700">Needs Review</div>
+            </div>
+          </div>
+
+          <div className="rounded border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-700">
+              <span>Match Rate</span>
+              <span>{previewMatchRate}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+              <div
+                className="h-full rounded-full bg-[#58a967]"
+                style={{ width: `${previewMatchRate}%` }}
+              />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+              <div>Matched: {preview.summary.matched}</div>
+              <div>Unmatched: {preview.summary.unmatched}</div>
             </div>
           </div>
 
