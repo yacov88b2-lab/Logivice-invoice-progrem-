@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '../../api';
 import type { Pricelist, PreviewResponse, GenerateResponse } from '../../types';
 
@@ -39,17 +39,39 @@ export function UserDashboard() {
   }, [billingCycle]);
 
   // Get unique customers from pricelists
-  const customers = Array.from(new Set(pricelists.map(p => p.customer_name))).sort();
-  
+  const customers = useMemo(
+    () => Array.from(new Set(pricelists.map(p => p.customer_name))).sort(),
+    [pricelists]
+  );
+
   // Get warehouses filtered by selected customer
-  const warehouses = selectedCustomer 
-    ? Array.from(new Set(pricelists.filter(p => p.customer_name === selectedCustomer).map(p => p.warehouse_code))).sort()
-    : [];
-  
+  const warehouses = useMemo(
+    () => selectedCustomer
+      ? Array.from(new Set(pricelists
+          .filter(p => p.customer_name === selectedCustomer)
+          .map(p => p.warehouse_code)
+        )).sort()
+      : [],
+    [pricelists, selectedCustomer]
+  );
+
   // Get pricelists filtered by customer and warehouse
-  const filteredPricelists = pricelists.filter(p => 
-    (!selectedCustomer || p.customer_name === selectedCustomer) &&
-    (!selectedWarehouse || p.warehouse_code === selectedWarehouse)
+  const filteredPricelists = useMemo(
+    () => pricelists.filter(p =>
+      (!selectedCustomer || p.customer_name === selectedCustomer) &&
+      (!selectedWarehouse || p.warehouse_code === selectedWarehouse)
+    ),
+    [pricelists, selectedCustomer, selectedWarehouse]
+  );
+
+  const selectedPricelistRecord = useMemo(
+    () => pricelists.find(p => p.id === selectedPricelist),
+    [pricelists, selectedPricelist]
+  );
+
+  const readyToPreview = useMemo(
+    () => Boolean(selectedCustomer && selectedWarehouse && selectedPricelist && startDate && endDate),
+    [selectedCustomer, selectedWarehouse, selectedPricelist, startDate, endDate]
   );
 
   // Auto-select pricelist when only one option exists
@@ -85,8 +107,11 @@ export function UserDashboard() {
   };
 
   const handleGenerate = async () => {
-    if (!selectedPricelist || !startDate || !endDate) return;
-    
+    if (!selectedPricelist || !startDate || !endDate) {
+      setError('Please select a pricelist and date range before generating the invoice.');
+      return;
+    }
+
     await executeGenerate();
   };
 
@@ -103,6 +128,30 @@ export function UserDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const downloadBlob = async (blob: Blob, filename: string) => {
+    const urlObject = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = urlObject;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(urlObject);
+  };
+
+  const downloadFromResponse = async (response: Response, filename: string) => {
+    if (!response.ok) {
+      throw new Error('Failed to download file');
+    }
+    const blob = await response.blob();
+    await downloadBlob(blob, filename);
+  };
+
+  const downloadFromUrl = async (url: string, filename: string) => {
+    const res = await fetch(url);
+    await downloadFromResponse(res, filename);
   };
 
   const handleDownload = () => {
@@ -130,18 +179,7 @@ export function UserDashboard() {
           return `${customer}${periodPart} ${localStamp}.xlsx`;
         })();
 
-        const res = await fetch(api.downloadInvoice(result.auditLogId));
-        if (!res.ok) throw new Error('Failed to download invoice');
-
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
+        await downloadFromUrl(api.downloadInvoice(result.auditLogId), filename);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         console.error(err);
@@ -174,18 +212,7 @@ export function UserDashboard() {
         const downloadName = `${safeCustomer} Total transaction matched and unmatched ${timestamp}.xlsx`;
 
         const res = await api.exportTotal(Number(selectedPricelist), startDate, endDate);
-
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-
-        a.download = downloadName;
-
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
+        await downloadFromResponse(res, downloadName);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         console.error(err);
@@ -195,9 +222,6 @@ export function UserDashboard() {
       }
     })();
   };
-
-  const selectedPricelistRecord = pricelists.find(p => p.id === selectedPricelist);
-  const readyToPreview = Boolean(selectedCustomer && selectedWarehouse && selectedPricelist && startDate && endDate);
 
   return (
     <div className="space-y-6">
