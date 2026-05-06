@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { api } from '../../api';
 
 export interface RuleStep {
   id: string;
   type: string;
   enabled: boolean;
   config: Record<string, any>;
+  metadata?: Record<string, any>;
 }
 
 export interface CustomerRuleDefinition {
@@ -74,6 +76,12 @@ export function RuleBuilder({ customerId, onSave, existingRule }: RuleBuilderPro
     setRule({ ...rule, steps: updatedSteps });
   };
 
+  const updateStepEnabled = (stepIndex: number, enabled: boolean) => {
+    const updatedSteps = [...(rule.steps || [])];
+    updatedSteps[stepIndex] = { ...updatedSteps[stepIndex], enabled };
+    setRule({ ...rule, steps: updatedSteps });
+  };
+
   const removeStep = (stepIndex: number) => {
     const updatedSteps = (rule.steps || []).filter((_, i) => i !== stepIndex);
     setRule({ ...rule, steps: updatedSteps });
@@ -87,22 +95,15 @@ export function RuleBuilder({ customerId, onSave, existingRule }: RuleBuilderPro
     }
 
     try {
-      const method = existingRule ? 'PUT' : 'POST';
-      const url = existingRule ? `/api/rules/${existingRule.id}` : '/api/rules';
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...rule,
-          customer_id: customerId,
-          created_by: 'admin',
-          updated_by: 'admin'
-        })
-      });
-
-      if (!response.ok) throw new Error('Failed to save rule');
-      const saved = await response.json();
+      const payload = {
+        ...rule,
+        customer_id: customerId,
+        created_by: 'admin',
+        updated_by: 'admin'
+      };
+      const saved = existingRule?.id
+        ? await api.updateRule(existingRule.id, payload)
+        : await api.createRule(payload);
       onSave(saved);
     } catch (error) {
       alert(`Error saving rule: ${(error as Error).message}`);
@@ -204,6 +205,7 @@ export function RuleBuilder({ customerId, onSave, existingRule }: RuleBuilderPro
           <StepConfigurator
             step={(rule.steps || [])[selectedStep]}
             onChange={config => updateStepConfig(selectedStep, config)}
+            onEnabledChange={enabled => updateStepEnabled(selectedStep, enabled)}
           />
         )}
 
@@ -238,7 +240,15 @@ export function RuleBuilder({ customerId, onSave, existingRule }: RuleBuilderPro
   );
 }
 
-function StepConfigurator({ step, onChange }: { step: RuleStep; onChange: (config: Record<string, any>) => void }) {
+function StepConfigurator({
+  step,
+  onChange,
+  onEnabledChange,
+}: {
+  step: RuleStep;
+  onChange: (config: Record<string, any>) => void;
+  onEnabledChange: (enabled: boolean) => void;
+}) {
   return (
     <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-4">
       <h4 className="font-medium">Configure: {step.type}</h4>
@@ -348,7 +358,7 @@ function StepConfigurator({ step, onChange }: { step: RuleStep; onChange: (confi
         <input
           type="checkbox"
           checked={step.enabled}
-          onChange={e => onChange({ ...step.config, enabled: e.target.checked })}
+          onChange={e => onEnabledChange(e.target.checked)}
           className="rounded"
         />
         <span className="text-sm">Enabled</span>

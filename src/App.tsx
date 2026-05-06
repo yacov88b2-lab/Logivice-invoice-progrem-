@@ -21,7 +21,7 @@ function App() {
               <img
                 src="/unilog-sc-logo.svg"
                 alt="Unilog SC"
-                className="h-12 w-auto shrink-0"
+                className="h-[46px] w-auto shrink-0"
               />
               <div>
                 <h1 className="text-xl font-semibold tracking-normal text-slate-950">

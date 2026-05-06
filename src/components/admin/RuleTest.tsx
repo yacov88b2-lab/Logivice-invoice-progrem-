@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { api } from '../../api';
 import type { CustomerRuleDefinition } from './RuleBuilder';
 
 interface RuleTestProps {
@@ -14,14 +15,8 @@ export function RuleTest({ rule }: RuleTestProps) {
     setLoading(true);
     try {
       const parsed = JSON.parse(testData);
-      const response = await fetch(`/api/rules/${rule.id}/test`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ testData: parsed })
-      });
-
-      if (!response.ok) throw new Error('Test failed');
-      const testResult = await response.json();
+      if (!rule.id) throw new Error('Rule must be saved before testing');
+      const testResult = await api.testRule(rule.id, parsed);
       setResult(testResult);
     } catch (error) {
       alert(`Error running test: ${(error as Error).message}`);
