@@ -90,7 +90,6 @@ export function UserDashboard() {
   }, [selectedCustomer, selectedWarehouse, selectedPricelist, billingCycle]);
 
   const handlePreview = async () => {
-    console.log('Preview clicked:', { selectedPricelist, startDate, endDate });
     if (!selectedPricelist || !startDate || !endDate) {
       setError('Please select a pricelist and date range');
       return;
