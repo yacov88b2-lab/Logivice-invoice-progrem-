@@ -81,6 +81,14 @@ export function UserDashboard() {
     }
   }, [filteredPricelists, selectedPricelist]);
 
+  // Clear stale preview and result data when user changes selection or billing cycle
+  useEffect(() => {
+    setPreview(null);
+    setResult(null);
+    setStep('select');
+    setError(null);
+  }, [selectedCustomer, selectedWarehouse, selectedPricelist, billingCycle]);
+
   const handlePreview = async () => {
     console.log('Preview clicked:', { selectedPricelist, startDate, endDate });
     if (!selectedPricelist || !startDate || !endDate) {
@@ -656,7 +664,7 @@ export function UserDashboard() {
             <button
               type="button"
               onClick={handleBackToPreview}
-              disabled={loading}
+              disabled={loading || !preview}
               className="flex-1 rounded border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
               Back to Review
