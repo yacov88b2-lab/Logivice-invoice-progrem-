@@ -134,7 +134,7 @@ export class RuleEngine {
     }
   }
 
-  private static async executeStep(
+  public static async executeStep(
     step: RuleStep,
     context: RuleEvaluationContext,
     originalContext: RuleEvaluationContext
@@ -168,6 +168,16 @@ export class RuleEngine {
     const warnings: string[] = [];
     const data: Record<string, any> = {};
 
+    if (!fieldName) {
+      errors.push('fieldName is required for field_extraction');
+      return { data, errors, warnings };
+    }
+
+    if (!outputKey) {
+      errors.push('outputKey is required for field_extraction');
+      return { data, errors, warnings };
+    }
+
     if (!context.transaction) {
       errors.push('No transaction data available');
       return { data, errors, warnings };
@@ -175,12 +185,18 @@ export class RuleEngine {
 
     let value = this.getFieldValue(context.transaction, fieldName);
 
+    if (value === undefined) {
+      errors.push(`Field '${fieldName}' not found in transaction`);
+      return { data, errors, warnings };
+    }
+
     if (transformType === 'uppercase') value = String(value).toUpperCase();
     else if (transformType === 'lowercase') value = String(value).toLowerCase();
     else if (transformType === 'trim') value = String(value).trim();
     else if (transformType === 'parse_date') {
-      value = this.parseTableauDate(value);
-      if (!value) warnings.push(`Could not parse date from ${fieldName}`);
+      const parsed = this.parseTableauDate(value);
+      value = parsed ? parsed.toISOString().split('T')[0] : value;
+      if (!parsed) warnings.push(`Could not parse date from ${fieldName}`);
     }
 
     data[outputKey] = value;
@@ -379,7 +395,7 @@ export class RuleEngine {
         errors.push(`Unknown operator: ${operator}`);
     }
 
-    data.passes = passes;
+    data.passFilter = passes;
     if (!passes) {
       warnings.push(`Filter failed: ${field} ${operator} ${value}`);
     }
@@ -391,7 +407,7 @@ export class RuleEngine {
     step: RuleStep,
     context: RuleEvaluationContext
   ): Promise<{ data: Record<string, any>; errors: string[]; warnings: string[] }> {
-    const { operation, outputKey, groupBy } = step.config;
+    const { operation, sourceKey, outputKey } = step.config;
     const errors: string[] = [];
     const warnings: string[] = [];
     const data: Record<string, any> = {};
@@ -401,18 +417,28 @@ export class RuleEngine {
       return { data, errors, warnings };
     }
 
-    // Simple aggregation for now (sum, count, distinct)
-    let result = 0;
+    const sourceData = context.previousResults[sourceKey];
+    if (!Array.isArray(sourceData)) {
+      errors.push('Source data must be an array');
+      return { data, errors, warnings };
+    }
+
+    let result: any = 0;
 
     if (operation === 'sum') {
-      result = Object.values(context.previousResults).reduce((sum: number, val: any) => {
-        return sum + (Number(val) || 0);
-      }, 0);
+      result = sourceData.reduce((sum: number, val: any) => sum + (Number(val) || 0), 0);
     } else if (operation === 'count') {
-      result = Object.keys(context.previousResults).length;
+      result = sourceData.length;
     } else if (operation === 'distinct') {
-      const set = new Set(Object.values(context.previousResults));
-      result = set.size;
+      const set = new Set(sourceData);
+      result = Array.from(set);
+    } else if (operation === 'avg') {
+      const sum = sourceData.reduce((sum: number, val: any) => sum + (Number(val) || 0), 0);
+      result = sourceData.length > 0 ? sum / sourceData.length : 0;
+    } else if (operation === 'min') {
+      result = Math.min(...sourceData.map((v: any) => Number(v) || 0));
+    } else if (operation === 'max') {
+      result = Math.max(...sourceData.map((v: any) => Number(v) || 0));
     }
 
     data[outputKey] = result;
@@ -428,12 +454,13 @@ export class RuleEngine {
     const warnings: string[] = [];
     const data: Record<string, any> = {};
 
-    // Simple condition evaluation
+    // Simple condition evaluation: field:value
     let conditionMet = false;
 
-    if (typeof condition === 'string') {
-      // Evaluate condition using previous results
-      conditionMet = context.previousResults?.[condition] === true;
+    if (typeof condition === 'string' && context.transaction) {
+      const [field, expectedValue] = condition.split(':');
+      const actualValue = this.getFieldValue(context.transaction, field);
+      conditionMet = String(actualValue).toLowerCase() === String(expectedValue).toLowerCase();
     }
 
     if (conditionMet) {

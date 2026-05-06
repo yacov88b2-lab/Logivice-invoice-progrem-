@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(curl -s \"https://logivice-api-production.up.railway.app/api/bug-reports\")",
+      "Bash(curl -s \"https://logivice-api-production.up.railway.app/api/health\")",
+      "Bash(gh pr create --title 'Merge Test-Main: bug fixes, toast system, bug report feature' --body ' *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git push *)",
+      "Bash(git stash *)",
+      "Skill(schedule)",
+      "Skill(schedule:*)"
+    ]
+  }
+}

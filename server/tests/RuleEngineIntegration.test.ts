@@ -16,11 +16,9 @@ import type { Transaction, LineItem } from '../types';
 import db from '../db';
 
 describe('RuleEngine Integration Tests', () => {
-  let engine: RuleEngine;
   let testCustomerId: string;
 
   beforeEach(() => {
-    engine = new RuleEngine();
     testCustomerId = `test_customer_${Date.now()}`;
   });
 
@@ -104,7 +102,7 @@ describe('RuleEngine Integration Tests', () => {
       ];
 
       // Step 5: Execute rule
-      const executionResult = await engine.evaluateRule(loadedRule!, {
+      const executionResult = await RuleEngine.evaluateRule(loadedRule!, {
         transaction: testTransaction,
         lineItems: testLineItems,
         templateStructure: { sheets: [], columns: [], headers: [] },
@@ -114,7 +112,8 @@ describe('RuleEngine Integration Tests', () => {
 
       expect(executionResult.success).toBe(true);
       expect(executionResult.data.extracted_segment).toBe('INBOUND');
-      expect(executionResult.data.matchedLineItem).toBeDefined();
+      expect(executionResult.data.matches).toHaveLength(1);
+      expect(executionResult.data.matches[0].item).toBeDefined();
 
       // Step 6: Log test run to database
       const testRunId = `run_${Date.now()}`;
@@ -382,7 +381,7 @@ describe('RuleEngine Integration Tests', () => {
         previousResults: {}
       };
 
-      const result = await engine.evaluateRule(saved, testData as any);
+      const result = await RuleEngine.evaluateRule(saved, testData as any);
 
       expect(result.success).toBe(true);
       expect(result.executedSteps).toBe(5);
@@ -433,7 +432,7 @@ describe('RuleEngine Integration Tests', () => {
         previousResults: {}
       };
 
-      const result = await engine.evaluateRule(saved, testData as any);
+      const result = await RuleEngine.evaluateRule(saved, testData as any);
 
       // Should continue despite first step error
       expect(result.data.result2).toBe('Inbound');

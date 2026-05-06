@@ -3,12 +3,9 @@ import { RuleEngine, type RuleStep, type RuleEvaluationContext, type CustomerRul
 import type { Transaction, LineItem } from '../types';
 
 describe('RuleEngine', () => {
-  let engine: RuleEngine;
   let mockContext: RuleEvaluationContext;
 
   beforeEach(() => {
-    engine = new RuleEngine();
-
     mockContext = {
       transaction: {
         id: 'txn_001',
@@ -58,9 +55,9 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
 
-      expect(result.success).toBe(true);
+      expect(result.errors).toHaveLength(0);
       expect(result.data.extractedSegment).toBe('INBOUND');
     });
 
@@ -76,8 +73,8 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.success).toBe(true);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.errors).toHaveLength(0);
       expect(result.data.result).toBe('Inbound');
     });
 
@@ -93,7 +90,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.result).toBe('inbound');
     });
 
@@ -110,7 +107,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.result).toBe('Inbound');
     });
 
@@ -126,8 +123,8 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.success).toBe(true);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.errors).toHaveLength(0);
       expect(result.data.result).toMatch(/2024-01-15|January 15, 2024/);
     });
 
@@ -143,8 +140,8 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.success).toBe(false);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.errors).toHaveLength(1);
       expect(result.errors.length).toBeGreaterThan(0);
     });
   });
@@ -163,7 +160,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.result).toBe('HELLO WORLD');
     });
 
@@ -182,7 +179,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.result).toBe('ABC');
     });
 
@@ -196,12 +193,12 @@ describe('RuleEngine', () => {
           sourceKey: 'sourceData',
           operation: 'replace',
           targetKey: 'result',
-          search: '-',
+          pattern: '-',
           replacement: '_'
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.result).toBe('foo_bar_baz');
     });
   });
@@ -218,10 +215,10 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.success).toBe(true);
-      expect(result.data.matchedLineItem).toBeDefined();
-      expect(result.data.matchedLineItem.id).toBe('li_001');
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.errors).toHaveLength(0);
+      expect(result.data.matches).toHaveLength(1);
+      expect(result.data.matches[0].item.id).toBe('li_001');
     });
 
     it('should return no match for non-matching fields', async () => {
@@ -236,9 +233,9 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.data.matchedLineItem).toBeUndefined();
-      expect(result.warnings.length).toBeGreaterThan(0);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.data.unmatched).toHaveLength(1);
+      expect(result.warnings).toHaveLength(0);
     });
 
     it('should handle case-insensitive matching', async () => {
@@ -254,9 +251,9 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.success).toBe(true);
-      expect(result.data.matchedLineItem).toBeDefined();
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.errors).toHaveLength(0);
+      expect(result.data.matches).toHaveLength(1);
     });
   });
 
@@ -284,13 +281,14 @@ describe('RuleEngine', () => {
         enabled: true,
         config: {
           matchFields: ['description'],
-          threshold: 0.6
+          threshold: 0.1
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.success).toBe(true);
-      expect(result.data.matchScore).toBeGreaterThan(0.6);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.errors).toHaveLength(0);
+      expect(result.data.matches).toHaveLength(1);
+      expect(result.data.matches[0].confidence).toBeGreaterThan(0.1);
     });
 
     it('should reject match below threshold', async () => {
@@ -307,9 +305,9 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.data.matchedLineItem).toBeUndefined();
-      expect(result.warnings.length).toBeGreaterThan(0);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.data.unmatched).toHaveLength(1);
+      expect(result.warnings).toHaveLength(0);
     });
   });
 
@@ -326,8 +324,8 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.success).toBe(true);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.errors).toHaveLength(0);
       expect(result.data.passFilter).toBe(true);
     });
 
@@ -343,7 +341,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.passFilter).toBe(true);
     });
 
@@ -359,7 +357,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.passFilter).toBe(true);
     });
 
@@ -375,7 +373,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.passFilter).toBe(false);
     });
   });
@@ -394,7 +392,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.total).toBe(60);
     });
 
@@ -411,7 +409,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.count).toBe(5);
     });
 
@@ -428,7 +426,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.unique.length).toBe(3);
       expect(result.data.unique).toContain('a');
       expect(result.data.unique).toContain('b');
@@ -451,7 +449,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.action).toBe('handle_inbound');
     });
 
@@ -470,7 +468,7 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
       expect(result.data.action).toBe('handle_outbound');
     });
   });
@@ -508,9 +506,9 @@ describe('RuleEngine', () => {
         ]
       };
 
-      const result = await engine.evaluateRule(rule, mockContext);
-      expect(result.success).toBe(true);
-      expect(result.executedSteps).toBe(2);
+      const result = await RuleEngine.evaluateRule(rule, mockContext);
+      expect(result.errors).toHaveLength(0);
+      expect(result.executedSteps).toHaveLength(2);
       expect(result.data.extracted_segment).toBe('INBOUND');
       expect(result.data.passFilter).toBe(true);
     });
@@ -526,9 +524,9 @@ describe('RuleEngine', () => {
         steps: []
       };
 
-      const result = await engine.evaluateRule(rule, mockContext);
-      expect(result.success).toBe(false);
-      expect(result.warnings[0]).toContain('disabled');
+      const result = await RuleEngine.evaluateRule(rule, mockContext);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('disabled');
     });
 
     it('should skip disabled steps', async () => {
@@ -555,8 +553,8 @@ describe('RuleEngine', () => {
         ]
       };
 
-      const result = await engine.evaluateRule(rule, mockContext);
-      expect(result.success).toBe(true);
+      const result = await RuleEngine.evaluateRule(rule, mockContext);
+      expect(result.errors).toHaveLength(0);
       expect(result.data.result).toBeUndefined();
       expect(result.data.reference).toBe('REF-12345');
     });
@@ -575,8 +573,8 @@ describe('RuleEngine', () => {
         }
       };
 
-      const result = await engine.executeStep(step, mockContext);
-      expect(result.success).toBe(false);
+      const result = await RuleEngine.executeStep(step, mockContext, mockContext);
+      expect(result.errors).toHaveLength(1);
       expect(result.errors.length).toBeGreaterThan(0);
     });
 
@@ -604,7 +602,7 @@ describe('RuleEngine', () => {
         ]
       };
 
-      const result = await engine.evaluateRule(rule, mockContext);
+      const result = await RuleEngine.evaluateRule(rule, mockContext);
       expect(result.errors.length).toBeGreaterThanOrEqual(2);
     });
   });

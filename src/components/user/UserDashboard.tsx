@@ -211,7 +211,7 @@ export function UserDashboard() {
         const localStamp = `${pad2(now.getDate())}-${pad2(now.getMonth() + 1)}-${now.getFullYear()} ${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
 
         const filename = (() => {
-          const suggested = String((result as any)?.suggestedFilename || '').trim();
+          const suggested = String((result as { suggestedFilename?: string })?.suggestedFilename || '').trim();
           if (suggested) return suggested;
 
           const customer = String(result?.pricelist?.customer || selectedCustomer || 'Customer').trim();
@@ -615,8 +615,8 @@ export function UserDashboard() {
               </p>
               <div className="mt-2 text-sm text-green-700">
                 <div className="grid grid-cols-2 gap-2">
-                  <div>Inbound Orders: {preview.transactions?.filter((t: any) => t.segment === 'Inbound').length || 0}</div>
-                  <div>Outbound Orders: {preview.transactions?.filter((t: any) => t.segment === 'Outbound').length || 0}</div>
+                  <div>Inbound Orders: {preview.transactions?.filter((t) => t.segment === 'Inbound').length || 0}</div>
+                  <div>Outbound Orders: {preview.transactions?.filter((t) => t.segment === 'Outbound').length || 0}</div>
                 </div>
               </div>
             </div>

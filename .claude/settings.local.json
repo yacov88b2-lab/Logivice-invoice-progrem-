@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Dev - New\\\\Windsurff invoice\\\\invoice-processor\" -Force | Format-Table -Property Name, @{Name=\"Type\";Expression={if\\($_.PSIsContainer\\){\"📁\"}else{\"📄\"}}}  -AutoSize)",
+      "Bash(npx tsc *)",
+      "Bash(git restore *)",
+      "Bash(git commit -m ' *)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:3001/api/rules\" -Method Get -ErrorAction SilentlyContinue 2>&1)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Dev - New\\\\Windsurff invoice\" -Recurse -Directory -Name)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Dev - New\\\\Windsurff invoice\\\\invoice-processor\\\\server\" -Recurse -Filter \"*.js\" -File)",
+      "Bash(Select-Object -First 50 FullName)",
+      "Bash(curl -s -X POST http://localhost:3001/api/generate/preview -H \"Content-Type: application/json\" -d \"{\\\\\"pricelist_id\\\\\":1,\\\\\"start_date\\\\\":\\\\\"2026-04-01\\\\\",\\\\\"end_date\\\\\":\\\\\"2026-04-30\\\\\"}\")",
+      "Bash(curl -s http://localhost:3001/api/pricelists)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \"LISTENING\")",
+      "Bash(findstr \":30\")",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X POST \"https://logivice-api-production.up.railway.app/api/generate/preview\" -H \"Content-Type: application/json\" -d \"{\\\\\"pricelist_id\\\\\":1,\\\\\"start_date\\\\\":\\\\\"2026-04-01\\\\\",\\\\\"end_date\\\\\":\\\\\"2026-04-30\\\\\"}\")"
+    ]
+  }
+}
