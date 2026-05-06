@@ -81,6 +81,19 @@ export function UserDashboard() {
     }
   }, [filteredPricelists, selectedPricelist]);
 
+  // Auto-select customer and warehouse when only one option exists
+  useEffect(() => {
+    if (customers.length === 1 && !selectedCustomer) {
+      setSelectedCustomer(customers[0]);
+    }
+  }, [customers, selectedCustomer]);
+
+  useEffect(() => {
+    if (warehouses.length === 1 && selectedCustomer && !selectedWarehouse) {
+      setSelectedWarehouse(warehouses[0]);
+    }
+  }, [warehouses, selectedCustomer, selectedWarehouse]);
+
   // Clear stale preview and result data when user changes selection or billing cycle
   useEffect(() => {
     setPreview(null);
