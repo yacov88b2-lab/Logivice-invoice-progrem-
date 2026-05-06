@@ -3,6 +3,7 @@ import { PricelistList } from './PricelistList';
 import { PricelistUpload } from './PricelistUpload';
 import type { Pricelist } from '../../types';
 import { API_BASE } from '../../api';
+import { toast } from '../../toast';
 
 export function PricelistManager() {
   const [showUpload, setShowUpload] = useState(false);
@@ -92,14 +93,14 @@ export function PricelistManager() {
           commitsBehind: 0,
           pendingCommits: []
         }));
-        alert('Deployed successfully!\n\nTest-Main has been merged to main and pushed to GitHub.\nProduction site will update automatically.');
+        toast.success('Deployed successfully! Test-Main merged to main and pushed to GitHub.');
       } else {
         setDeployStatus(prev => ({
           ...prev,
           loading: false,
           lastDeployResult: 'error: ' + data.error
         }));
-        alert('Deploy failed:\n' + data.error);
+        toast.error('Deploy failed: ' + data.error);
       }
     } catch (error) {
       setDeployStatus(prev => ({
@@ -107,7 +108,7 @@ export function PricelistManager() {
         loading: false,
         lastDeployResult: 'error: ' + (error as Error).message
       }));
-      alert('Deploy failed:\n' + (error as Error).message);
+      toast.error('Deploy failed: ' + (error as Error).message);
     }
   };
 

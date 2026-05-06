@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../api';
+import { toast } from '../../toast';
 
 export interface RuleStep {
   id: string;
@@ -90,7 +91,7 @@ export function RuleBuilder({ customerId, onSave, existingRule }: RuleBuilderPro
 
   const handleSave = async () => {
     if (!rule.name || !rule.steps || rule.steps.length === 0) {
-      alert('Rule name and at least one step required');
+      toast.error('Rule name and at least one step required');
       return;
     }
 
@@ -106,7 +107,7 @@ export function RuleBuilder({ customerId, onSave, existingRule }: RuleBuilderPro
         : await api.createRule(payload);
       onSave(saved);
     } catch (error) {
-      alert(`Error saving rule: ${(error as Error).message}`);
+      toast.error(`Error saving rule: ${(error as Error).message}`);
     }
   };
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../api';
 import type { CustomerRuleDefinition } from './RuleBuilder';
+import { toast } from '../../toast';
 
 interface RuleTestProps {
   rule: CustomerRuleDefinition;
@@ -19,7 +20,7 @@ export function RuleTest({ rule }: RuleTestProps) {
       const testResult = await api.testRule(rule.id, parsed);
       setResult(testResult);
     } catch (error) {
-      alert(`Error running test: ${(error as Error).message}`);
+      toast.error(`Error running test: ${(error as Error).message}`);
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from "../../api";
 import type { Pricelist } from '../../types';
+import { toast } from '../../toast';
 
 interface PricelistListProps {
   onEdit: (pricelist: Pricelist) => void;
@@ -39,7 +40,7 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
       onRefresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to delete pricelist';
-      alert(msg);
+      toast.error(msg);
     } finally {
       setDeleting(null);
     }

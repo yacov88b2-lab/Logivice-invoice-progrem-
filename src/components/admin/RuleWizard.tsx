@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { api } from '../../api';
 import type { CustomerRuleDefinition, RuleStep } from './RuleBuilder';
+import { toast } from '../../toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export function RuleWizard({ customerId, existingRule, onSave }: RuleWizardProps
   const toggleVoice = () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
-      alert('Voice input is not supported in this browser. Try Chrome or Edge.');
+      toast.info('Voice input is not supported in this browser. Try Chrome or Edge.');
       return;
     }
     if (isListening) {

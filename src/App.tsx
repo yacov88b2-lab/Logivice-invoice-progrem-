@@ -3,6 +3,7 @@ import { PricelistManager } from './components/admin/PricelistManager';
 import { CustomerRules } from './components/admin/CustomerRules';
 import { UserDashboard } from './components/user/UserDashboard';
 import { BugReportButton } from './components/BugReportButton';
+import { ToastContainer } from './components/ToastContainer';
 
 function App() {
   const [activeTab, setActiveTab] = useState<'user' | 'rules' | 'admin'>('user');
@@ -58,6 +59,7 @@ function App() {
         {activeTab === 'admin' && <PricelistManager />}
       </main>
 
+      <ToastContainer />
       <BugReportButton />
 
       <footer className="mt-10 border-t border-slate-200 bg-white">

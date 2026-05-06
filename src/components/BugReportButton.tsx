@@ -1,9 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { toast } from '../toast';
 
 export function BugReportButton() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', severity: 'medium', reported_by: '' });
+
+  useEffect(() => {
+    toast.onReportBug((errorMessage: string) => {
+      setForm(f => ({
+        ...f,
+        title: errorMessage.length > 80 ? errorMessage.slice(0, 77) + '...' : errorMessage,
+        description: `Error occurred on page ${window.location.pathname}:\n\n${errorMessage}`,
+        severity: 'high',
+      }));
+      setOpen(true);
+    });
+  }, []);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
