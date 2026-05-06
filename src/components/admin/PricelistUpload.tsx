@@ -89,9 +89,9 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
       .filter(Boolean)
       .map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const customerPattern = customerTokens.join('[\\s-]+');
-    const nameRegex = new RegExp(`^${customerPattern}\\s*[-]\\s*Template\\s+\\d{4}$`);
+    const nameRegex = new RegExp(`^${customerPattern}\\s*[–-]\\s*Template\\s+\\d{4}$`);
     if (!nameRegex.test(formData.name.trim())) {
-      setError('Pricelist name must use the format "Customer name - Template YYYY".');
+      setError('Pricelist Name need to be in a format of “Customer name – Template YYYY”.');
       return;
     }
 
@@ -148,7 +148,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
-            placeholder="e.g., Afimilk - Template 2026"
+            placeholder="e.g., Afimilk – Template 2026"
           />
         </div>
 

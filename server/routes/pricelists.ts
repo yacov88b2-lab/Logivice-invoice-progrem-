@@ -170,10 +170,23 @@ router.delete('/:id', async (req, res) => {
 
     db.prepare('DELETE FROM audit_logs WHERE pricelist_id = ?').run(id);
     
+<<<<<<< Updated upstream
     try {
       await pricelistStorage.deleteFile(pricelist.file_path);
     } catch (e) {
       console.warn('[PricelistRoutes] Failed to delete file, continuing:', e);
+=======
+    // Delete the file
+    if (fs.existsSync(pricelist.file_path)) {
+      try {
+        fs.unlinkSync(pricelist.file_path);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        return res.status(500).json({
+          error: `Failed to delete pricelist file. Close the Excel file if it is open and try again. Details: ${err.message}`
+        });
+      }
+>>>>>>> Stashed changes
     }
     
     const success = PricelistModel.delete(id);
@@ -184,9 +197,18 @@ router.delete('/:id', async (req, res) => {
       res.status(500).json({ error: 'Failed to delete pricelist' });
     }
   } catch (error) {
+<<<<<<< Updated upstream
     console.error('Error deleting pricelist:', error);
+<<<<<<< Updated upstream
     const err = error instanceof Error ? error : new Error(String(error));
     res.status(500).json({ error: `Failed to delete pricelist. Details: ${err.message}` });
+=======
+    res.status(500).json({ error: 'Failed to delete pricelist', details: (error as Error).message });
+=======
+    const err = error instanceof Error ? error : new Error(String(error));
+    res.status(500).json({ error: `Failed to delete pricelist. Details: ${err.message}` });
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
   }
 });
 

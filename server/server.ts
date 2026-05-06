@@ -7,6 +7,7 @@ import { initDatabase } from './db';
 import pricelistsRouter from './routes/pricelists';
 import generateRouter from './routes/api/generate';
 import tableauRouter from './routes/tableau';
+<<<<<<< Updated upstream
 import deployRouter from './routes/deploy';
 import rulesRouter from './routes/api/rules';
 
@@ -20,6 +21,8 @@ const getCommitHash = (): string => {
     return 'unknown';
   }
 };
+=======
+>>>>>>> Stashed changes
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -59,7 +62,10 @@ app.use('/api/pricelists', pricelistsRouter);
 app.use('/api/rules', rulesRouter);
 app.use('/api/generate', generateRouter);
 app.use('/api/tableau', tableauRouter);
+<<<<<<< Updated upstream
 app.use('/api/deploy', deployRouter);
+=======
+>>>>>>> Stashed changes
 
 // Health check + diagnostics
 app.get('/api/health', (req, res) => {
