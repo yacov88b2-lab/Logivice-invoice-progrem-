@@ -569,6 +569,12 @@ export function UserDashboard() {
             </div>
           </div>
 
+          {preview.summary.totalTransactions === 0 && (
+            <div className="rounded border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              No transactions were found for this date range. Please confirm the selected customer, warehouse, and dates.
+            </div>
+          )}
+
           {preview.unmatched.length > 0 && (
             <div className="rounded border border-amber-200 bg-amber-50 p-4">
               <h4 className="font-semibold text-amber-900 mb-2">
