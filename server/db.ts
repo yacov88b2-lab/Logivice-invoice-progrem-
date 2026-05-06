@@ -79,7 +79,7 @@ export function initDatabase() {
     console.log('Default admin created. Password stored securely.');
   }
 
-  // Customer Rules table (NEW)
+  // Customer Rules table
   db.exec(`
     CREATE TABLE IF NOT EXISTS customer_rules (
       id TEXT PRIMARY KEY,
@@ -93,10 +93,42 @@ export function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       created_by TEXT NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_by TEXT NOT NULL,
-      FOREIGN KEY (customer_id) REFERENCES pricelists(customer_name)
+      updated_by TEXT NOT NULL
     )
   `);
+
+  // Migration: recreate customer_rules without the invalid FK on pricelists(customer_name)
+  // The FK caused "foreign key mismatch" errors on pricelist delete because customer_name
+  // is not a unique/primary-key column on pricelists.
+  try {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customer_rules'").get() as { sql: string } | undefined;
+    if (tableInfo?.sql?.includes('REFERENCES pricelists')) {
+      db.exec(`
+        BEGIN;
+        ALTER TABLE customer_rules RENAME TO customer_rules_old;
+        CREATE TABLE customer_rules (
+          id TEXT PRIMARY KEY,
+          customer_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          version INTEGER DEFAULT 1,
+          enabled INTEGER DEFAULT 0,
+          rule_type TEXT CHECK(rule_type IN ('matching', 'transformation', 'aggregation')) DEFAULT 'matching',
+          steps TEXT NOT NULL DEFAULT '[]',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          created_by TEXT NOT NULL,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_by TEXT NOT NULL
+        );
+        INSERT INTO customer_rules SELECT id,customer_id,name,description,version,enabled,rule_type,steps,created_at,created_by,updated_at,updated_by FROM customer_rules_old;
+        DROP TABLE customer_rules_old;
+        COMMIT;
+      `);
+      console.log('[DB] Migrated customer_rules: removed invalid FK on pricelists(customer_name)');
+    }
+  } catch (e) {
+    console.error('[DB] Migration customer_rules failed:', e);
+  }
 
   // Create indexes for customer_rules
   db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_rules_customer_id ON customer_rules(customer_id)`);
@@ -127,6 +159,20 @@ export function initDatabase() {
       changed_by TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (rule_id) REFERENCES customer_rules(id)
+    )
+  `);
+
+  // Bug reports table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bug_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      page TEXT,
+      severity TEXT CHECK(severity IN ('low', 'medium', 'high', 'critical')) DEFAULT 'medium',
+      reported_by TEXT,
+      status TEXT CHECK(status IN ('open', 'in_progress', 'resolved')) DEFAULT 'open',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 

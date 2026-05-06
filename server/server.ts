@@ -9,6 +9,7 @@ import generateRouter from './routes/api/generate';
 import tableauRouter from './routes/tableau';
 import deployRouter from './routes/deploy';
 import rulesRouter from './routes/api/rules';
+import bugReportsRouter from './routes/api/bugReports';
 
 const getCommitHash = (): string => {
   if (process.env.RAILWAY_GIT_COMMIT_SHA) {
@@ -60,6 +61,7 @@ app.use('/api/rules', rulesRouter);
 app.use('/api/generate', generateRouter);
 app.use('/api/tableau', tableauRouter);
 app.use('/api/deploy', deployRouter);
+app.use('/api/bug-reports', bugReportsRouter);
 
 // Health check + diagnostics
 app.get('/api/health', (req, res) => {

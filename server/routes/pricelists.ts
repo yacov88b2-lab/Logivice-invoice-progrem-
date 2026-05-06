@@ -169,13 +169,29 @@ router.delete('/:id', async (req, res) => {
     }
 
     db.prepare('DELETE FROM audit_logs WHERE pricelist_id = ?').run(id);
-    
+
+    // If this is the last pricelist for this customer, remove their rules too
+    // (customer_rules.customer_id references pricelists.customer_name)
+    const otherPricelists = db.prepare(
+      'SELECT COUNT(*) as c FROM pricelists WHERE customer_name = ? AND id != ?'
+    ).get(pricelist.customer_name, id) as { c: number };
+    if (otherPricelists.c === 0) {
+      const ruleIds = (
+        db.prepare('SELECT id FROM customer_rules WHERE customer_id = ?').all(pricelist.customer_name) as { id: string }[]
+      ).map(r => r.id);
+      for (const ruleId of ruleIds) {
+        db.prepare('DELETE FROM rule_test_runs WHERE rule_id = ?').run(ruleId);
+        db.prepare('DELETE FROM rule_audit_log WHERE rule_id = ?').run(ruleId);
+      }
+      db.prepare('DELETE FROM customer_rules WHERE customer_id = ?').run(pricelist.customer_name);
+    }
+
     try {
       await pricelistStorage.deleteFile(pricelist.file_path);
     } catch (e) {
       console.warn('[PricelistRoutes] Failed to delete file, continuing:', e);
     }
-    
+
     const success = PricelistModel.delete(id);
     
     if (success) {

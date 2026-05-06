@@ -178,6 +178,17 @@ export const api = {
     return res.json();
   },
 
+  // Bug reports
+  reportBug: async (report: { title: string; description: string; page?: string; severity?: string; reported_by?: string }) => {
+    const res = await fetch(`${API_BASE}/bug-reports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to submit bug report'));
+    return res.json();
+  },
+
   // Health check
   health: async () => {
     const res = await fetch(`${API_BASE}/health`);
