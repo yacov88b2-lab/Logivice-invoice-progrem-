@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api';
-import { RuleBuilder, type CustomerRuleDefinition } from './RuleBuilder';
+import { RuleWizard } from './RuleWizard';
+import type { CustomerRuleDefinition } from './RuleBuilder';
 import { RuleTest } from './RuleTest';
 import type { Pricelist } from '../../types';
 
@@ -103,7 +104,7 @@ export function CustomerRules() {
             Back to Rules
           </button>
         </div>
-        <RuleBuilder
+        <RuleWizard
           customerId={selectedRule?.customer_id || selectedCustomer || defaultCustomers[0]}
           existingRule={selectedRule}
           onSave={handleSaved}
