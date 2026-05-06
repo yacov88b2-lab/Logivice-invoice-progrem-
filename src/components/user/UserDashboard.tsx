@@ -371,6 +371,11 @@ export function UserDashboard() {
                 Loading pricelist options...
               </div>
             )}
+            {!loadingPricelists && !error && pricelists.length === 0 && (
+              <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                No active pricelists are available. Please upload or enable a pricelist first.
+              </div>
+            )}
             {selectedCustomer && selectedWarehouse && filteredPricelists.length === 0 && (
               <p className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 No pricelist found for this customer and warehouse.
@@ -447,7 +452,7 @@ export function UserDashboard() {
 
             <button
               onClick={handlePreview}
-              disabled={loading || !readyToPreview}
+              disabled={loading || loadingPricelists || !readyToPreview}
               className="mt-5 w-full rounded bg-[#28258b] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? 'Loading Preview...' : 'Preview Invoice Match'}
