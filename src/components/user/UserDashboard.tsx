@@ -77,7 +77,8 @@ export function UserDashboard() {
       setPreview(data);
       setStep('preview');
     } catch (err) {
-      setError('Failed to preview mapping. Please try again.');
+      const message = err instanceof Error ? err.message : 'Failed to preview mapping. Please try again.';
+      setError(message);
     } finally {
       setLoading(false);
     }

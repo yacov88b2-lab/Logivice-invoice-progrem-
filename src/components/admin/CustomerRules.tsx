@@ -7,8 +7,6 @@ import type { Pricelist } from '../../types';
 
 type ViewMode = 'list' | 'edit' | 'test';
 
-const defaultCustomers = ['Afimilk New Zealand', 'Sensos'];
-
 export function CustomerRules() {
   const [rules, setRules] = useState<CustomerRuleDefinition[]>([]);
   const [pricelists, setPricelists] = useState<Pricelist[]>([]);
@@ -20,7 +18,6 @@ export function CustomerRules() {
 
   const customers = Array.from(
     new Set([
-      ...defaultCustomers,
       ...pricelists.map(p => p.customer_name).filter(Boolean),
       ...rules.map(r => r.customer_id).filter(Boolean),
     ])
@@ -41,7 +38,7 @@ export function CustomerRules() {
       setRules(ruleData);
       setPricelists(pricelistData);
       if (!selectedCustomer) {
-        const firstCustomer = ruleData[0]?.customer_id || pricelistData[0]?.customer_name || defaultCustomers[0];
+        const firstCustomer = ruleData[0]?.customer_id || pricelistData[0]?.customer_name || '';
         setSelectedCustomer(firstCustomer);
       }
     } catch (err) {
@@ -105,7 +102,7 @@ export function CustomerRules() {
           </button>
         </div>
         <RuleWizard
-          customerId={selectedRule?.customer_id || selectedCustomer || defaultCustomers[0]}
+          customerId={selectedRule?.customer_id || selectedCustomer}
           existingRule={selectedRule}
           onSave={handleSaved}
         />
