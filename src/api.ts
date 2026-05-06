@@ -122,6 +122,62 @@ export const api = {
     return `${API_BASE}/generate/download/${auditLogId}`;
   },
 
+  // Customer rules
+  getRules: async () => {
+    const res = await fetch(`${API_BASE}/rules`);
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to fetch rules'));
+    return res.json();
+  },
+
+  createRule: async (rule: unknown) => {
+    const res = await fetch(`${API_BASE}/rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to create rule'));
+    return res.json();
+  },
+
+  updateRule: async (id: string, rule: unknown) => {
+    const res = await fetch(`${API_BASE}/rules/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to update rule'));
+    return res.json();
+  },
+
+  toggleRule: async (id: string, enabled: boolean) => {
+    const res = await fetch(`${API_BASE}/rules/${id}/toggle`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, updated_by: 'admin' }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to toggle rule'));
+    return res.json();
+  },
+
+  deleteRule: async (id: string) => {
+    const res = await fetch(`${API_BASE}/rules/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updated_by: 'admin' }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to delete rule'));
+  },
+
+  testRule: async (id: string, testData: unknown) => {
+    const res = await fetch(`${API_BASE}/rules/${id}/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ testData }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to test rule'));
+    return res.json();
+  },
+
   // Health check
   health: async () => {
     const res = await fetch(`${API_BASE}/health`);

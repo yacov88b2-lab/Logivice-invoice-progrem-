@@ -8,6 +8,7 @@ import pricelistsRouter from './routes/pricelists';
 import generateRouter from './routes/api/generate';
 import tableauRouter from './routes/tableau';
 import deployRouter from './routes/deploy';
+import rulesRouter from './routes/api/rules';
 
 const getCommitHash = (): string => {
   if (process.env.RAILWAY_GIT_COMMIT_SHA) {
@@ -55,6 +56,7 @@ app.get('/', (req, res) => {
 
 // Routes
 app.use('/api/pricelists', pricelistsRouter);
+app.use('/api/rules', rulesRouter);
 app.use('/api/generate', generateRouter);
 app.use('/api/tableau', tableauRouter);
 app.use('/api/deploy', deployRouter);

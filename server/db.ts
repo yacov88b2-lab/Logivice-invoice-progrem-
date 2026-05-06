@@ -79,6 +79,57 @@ export function initDatabase() {
     console.log('Default admin created. Password stored securely.');
   }
 
+  // Customer Rules table (NEW)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customer_rules (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      version INTEGER DEFAULT 1,
+      enabled INTEGER DEFAULT 0,
+      rule_type TEXT CHECK(rule_type IN ('matching', 'transformation', 'aggregation')) DEFAULT 'matching',
+      steps TEXT NOT NULL DEFAULT '[]',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_by TEXT NOT NULL,
+      FOREIGN KEY (customer_id) REFERENCES pricelists(customer_name)
+    )
+  `);
+
+  // Create indexes for customer_rules
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_rules_customer_id ON customer_rules(customer_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_rules_enabled ON customer_rules(enabled)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_rules_version ON customer_rules(version)`);
+
+  // Rule test runs (for preview/validation)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rule_test_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id TEXT NOT NULL,
+      test_data TEXT NOT NULL,
+      result TEXT NOT NULL,
+      passed INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (rule_id) REFERENCES customer_rules(id)
+    )
+  `);
+
+  // Rule audit trail
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rule_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id TEXT NOT NULL,
+      action TEXT CHECK(action IN ('created', 'updated', 'enabled', 'disabled', 'deleted')) NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      changed_by TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (rule_id) REFERENCES customer_rules(id)
+    )
+  `);
+
   console.log('Database initialized successfully');
 }
 

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="246" height="62" viewBox="0 0 246 62" role="img" aria-label="Unilog SC">
+  <defs>
+    <clipPath id="lo-window">
+      <rect x="82" y="0" width="68" height="62"/>
+    </clipPath>
+  </defs>
+  <g font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900">
+    <text x="-10" y="44" font-size="48" fill="#28258b" letter-spacing="-2">unilog</text>
+    <rect x="86" y="17" width="61" height="32" rx="6" fill="#6f7d89" opacity="0.85"/>
+    <rect x="86" y="17" width="61" height="32" rx="6" fill="none" stroke="#58bd69" stroke-width="6"/>
+    <text x="-10" y="44" font-size="48" fill="#6f7d89" letter-spacing="-2" clip-path="url(#lo-window)">unilog</text>
+    <rect x="190" y="17" width="55" height="32" rx="6" fill="#28258b"/>
+    <text x="201" y="42" font-size="27" fill="#ffffff" letter-spacing="-1">sc</text>
+  </g>
+</svg>
