@@ -12,12 +12,22 @@ export function UserDashboard() {
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingPricelists, setLoadingPricelists] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<'select' | 'preview' | 'result'>('select');
   const [billingCycle, setBillingCycle] = useState<'custom' | 'full_month'>('full_month');
 
   useEffect(() => {
-    api.getPricelists().then(data => setPricelists(data)).catch(console.error);
+    setLoadingPricelists(true);
+    setError(null);
+
+    api.getPricelists()
+      .then(data => setPricelists(data))
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Failed to load pricelists';
+        setError(message);
+      })
+      .finally(() => setLoadingPricelists(false));
   }, []);
 
   // Auto-set dates when billing cycle changes
@@ -303,7 +313,8 @@ export function UserDashboard() {
                     setSelectedWarehouse('');
                     setSelectedPricelist('');
                   }}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                  disabled={loadingPricelists}
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20 disabled:bg-slate-100 disabled:text-slate-400"
                 >
                   <option value="">Choose a customer</option>
                   {customers.map(customer => (
@@ -324,7 +335,7 @@ export function UserDashboard() {
                     setSelectedWarehouse(e.target.value);
                     setSelectedPricelist('');
                   }}
-                  disabled={!selectedCustomer}
+                  disabled={!selectedCustomer || loadingPricelists}
                   className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400 focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
                 >
                   <option value="">Choose a warehouse</option>
@@ -344,7 +355,7 @@ export function UserDashboard() {
               <select
                 value={selectedPricelist}
                 onChange={(e) => setSelectedPricelist(e.target.value ? Number(e.target.value) : '')}
-                disabled={!selectedCustomer || !selectedWarehouse}
+                disabled={!selectedCustomer || !selectedWarehouse || loadingPricelists}
                 className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400 focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
               >
                 <option value="">Choose a pricelist</option>
@@ -355,6 +366,11 @@ export function UserDashboard() {
                 ))}
               </select>
             </label>
+            {loadingPricelists && (
+              <div className="mt-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                Loading pricelist options...
+              </div>
+            )}
             {selectedCustomer && selectedWarehouse && filteredPricelists.length === 0 && (
               <p className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 No pricelist found for this customer and warehouse.
@@ -418,6 +434,11 @@ export function UserDashboard() {
               </label>
             </div>
 
+            {loadingPricelists && (
+              <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                Loading available pricelists...
+              </div>
+            )}
             {error && (
               <div className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 {error}
