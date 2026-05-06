@@ -39,7 +39,7 @@ router.get('/options', async (req, res) => {
 
     const dbCustomers = (db
       .prepare(
-        'SELECT DISTINCT customer_name as name FROM pricelists WHERE customer_name IS NOT NULL AND TRIM(customer_name) <> \'\''
+        'SELECT DISTINCT customer_name as name FROM pricelists WHERE customer_name IS NOT NULL AND TRIM(customer_name) <> \''\''
       )
       .all() as any[])
       .map(r => String(r.name || '').trim())

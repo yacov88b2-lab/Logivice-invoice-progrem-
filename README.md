@@ -63,7 +63,7 @@ npm run build
 1. Go to **Admin** tab
 2. Click **Upload New Pricelist**
 3. Enter:
-   - Pricelist Name (format: `Customer name - Template YYYY`, e.g. `Afimilk - Template 2026`)
+   - Pricelist Name (format: `Customer name – Template YYYY`, e.g. `Afimilk – Template 2026`)
    - Customer Name (select from dropdown)
    - Warehouse Code (select from dropdown)
 4. Upload Excel template file
