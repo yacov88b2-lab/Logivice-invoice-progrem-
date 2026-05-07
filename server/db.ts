@@ -97,33 +97,53 @@ export function initDatabase() {
     )
   `);
 
+  // Recovery: if a previous migration left customer_rules_old behind, clean up the broken state
+  try {
+    const oldExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_rules_old'").get();
+    if (oldExists) {
+      const newExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_rules'").get();
+      if (!newExists) {
+        // Migration failed after RENAME but before completion — restore the table
+        db.exec('ALTER TABLE customer_rules_old RENAME TO customer_rules');
+        console.log('[DB] Recovered customer_rules from broken migration state');
+      } else {
+        // Both exist — previous migration finished but DROP was skipped
+        db.exec('DROP TABLE customer_rules_old');
+        console.log('[DB] Cleaned up orphaned customer_rules_old table');
+      }
+    }
+  } catch (e) {
+    console.error('[DB] Recovery check failed:', e);
+  }
+
   // Migration: recreate customer_rules without the invalid FK on pricelists(customer_name)
   // The FK caused "foreign key mismatch" errors on pricelist delete because customer_name
   // is not a unique/primary-key column on pricelists.
   try {
     const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customer_rules'").get() as { sql: string } | undefined;
     if (tableInfo?.sql?.includes('REFERENCES pricelists')) {
-      db.exec(`
-        BEGIN;
-        ALTER TABLE customer_rules RENAME TO customer_rules_old;
-        CREATE TABLE customer_rules (
-          id TEXT PRIMARY KEY,
-          customer_id TEXT NOT NULL,
-          name TEXT NOT NULL,
-          description TEXT,
-          version INTEGER DEFAULT 1,
-          enabled INTEGER DEFAULT 0,
-          rule_type TEXT CHECK(rule_type IN ('matching', 'transformation', 'aggregation')) DEFAULT 'matching',
-          steps TEXT NOT NULL DEFAULT '[]',
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          created_by TEXT NOT NULL,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_by TEXT NOT NULL
-        );
-        INSERT INTO customer_rules SELECT id,customer_id,name,description,version,enabled,rule_type,steps,created_at,created_by,updated_at,updated_by FROM customer_rules_old;
-        DROP TABLE customer_rules_old;
-        COMMIT;
-      `);
+      const migrate = db.transaction(() => {
+        db.exec(`ALTER TABLE customer_rules RENAME TO customer_rules_old`);
+        db.exec(`
+          CREATE TABLE customer_rules (
+            id TEXT PRIMARY KEY,
+            customer_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            version INTEGER DEFAULT 1,
+            enabled INTEGER DEFAULT 0,
+            rule_type TEXT CHECK(rule_type IN ('matching', 'transformation', 'aggregation')) DEFAULT 'matching',
+            steps TEXT NOT NULL DEFAULT '[]',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_by TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_by TEXT NOT NULL
+          )
+        `);
+        db.exec(`INSERT INTO customer_rules SELECT id,customer_id,name,description,version,enabled,rule_type,steps,created_at,created_by,updated_at,updated_by FROM customer_rules_old`);
+        db.exec(`DROP TABLE customer_rules_old`);
+      });
+      migrate();
       console.log('[DB] Migrated customer_rules: removed invalid FK on pricelists(customer_name)');
     }
   } catch (e) {
