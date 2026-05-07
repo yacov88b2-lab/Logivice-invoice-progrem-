@@ -168,7 +168,6 @@ export interface PreviewResponse {
   }>;
   reviewQueue?: Array<{
     transaction: Transaction;
-    currentMatch: LineItem & { sheet: string };
     alternatives: Array<{
       lineItem: LineItem & { sheet: string };
       score: number;
@@ -192,6 +191,7 @@ export interface GenerateResponse {
     totalTransactions: number;
     matched: number;
     unmatched: number;
+    reviewRequired?: number;
     filledRows: number;
   };
   matches: Array<{
@@ -206,6 +206,12 @@ export interface GenerateResponse {
   unmatched: Array<{
     transaction: Partial<Transaction>;
     reason: string;
+    needsReview?: boolean;
+    reviewReason?: string;
+    alternatives?: Array<{
+      lineItem: Partial<LineItem>;
+      score: number;
+    }>;
   }>;
   filledRows: Array<{
     sheet: string;

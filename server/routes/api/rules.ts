@@ -141,6 +141,13 @@ router.patch('/:id/toggle', (req, res) => {
 
     // Disable other rules for same customer if enabling this one
     if (enabled === true) {
+      if (rule.approval_status !== 'approved') {
+        return res.status(400).json({
+          error: 'Rule must be approved before it can be enabled',
+          current_status: rule.approval_status
+        });
+      }
+
       const other = CustomerRuleModel.getByCustomer(rule.customer_id)
         .filter(r => r.id !== rule.id && r.enabled);
 
@@ -269,6 +276,145 @@ router.patch('/:id/revert-to-draft', (req, res) => {
   } catch (error) {
     console.error('Error reverting rule:', error);
     res.status(500).json({ error: 'Failed to revert rule', details: (error as Error).message });
+  }
+});
+
+const VALID_STEP_TYPES = new Set([
+  'field_extraction', 'field_transform', 'match_transaction',
+  'fuzzy_match', 'filter', 'aggregate', 'conditional'
+]);
+
+function validateAssistantSteps(steps: any[]): string[] {
+  const errors: string[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    const p = `Step ${i + 1}`;
+    if (!s.id || typeof s.id !== 'string') errors.push(`${p}: missing id`);
+    if (!s.type || !VALID_STEP_TYPES.has(s.type)) errors.push(`${p}: unknown type "${s.type}"`);
+    if (!s.config || typeof s.config !== 'object') { errors.push(`${p}: missing config`); continue; }
+    if (s.type === 'field_extraction') {
+      if (!s.config.fieldName) errors.push(`${p}: field_extraction requires fieldName`);
+      if (!s.config.outputKey) errors.push(`${p}: field_extraction requires outputKey`);
+    } else if (s.type === 'field_transform') {
+      if (!s.config.sourceKey) errors.push(`${p}: field_transform requires sourceKey`);
+      if (!s.config.targetKey) errors.push(`${p}: field_transform requires targetKey`);
+      if (!s.config.operation) errors.push(`${p}: field_transform requires operation`);
+    } else if (s.type === 'match_transaction' || s.type === 'fuzzy_match') {
+      if (!Array.isArray(s.config.matchFields) || s.config.matchFields.length === 0)
+        errors.push(`${p}: ${s.type} requires non-empty matchFields array`);
+    } else if (s.type === 'filter') {
+      if (!s.config.field) errors.push(`${p}: filter requires field`);
+      if (!s.config.operator) errors.push(`${p}: filter requires operator`);
+    } else if (s.type === 'aggregate') {
+      if (!s.config.sourceKey) errors.push(`${p}: aggregate requires sourceKey`);
+      if (!s.config.outputKey) errors.push(`${p}: aggregate requires outputKey`);
+      if (!s.config.operation) errors.push(`${p}: aggregate requires operation`);
+    }
+  }
+  return errors;
+}
+
+// Rule Assistant: suggest rule steps from a natural-language description
+router.post('/assistant/suggest', async (req, res) => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
+  }
+
+  const { description, customer_id, sample_transactions } = req.body;
+  if (!description || typeof description !== 'string' || description.trim().length < 5) {
+    return res.status(400).json({ error: 'description is required (min 5 chars)' });
+  }
+
+  const SYSTEM_PROMPT = `You are a rule configuration assistant for an invoice-processing system.
+
+The system maps warehouse transactions to pricelist line items. A "customer rule" is a list of steps that run per-transaction to help find the correct line item.
+
+Available step types and their config schemas:
+
+field_extraction  – extracts a transaction field into a named key
+  { fieldName: string, outputKey: string, transformType: 'none'|'uppercase'|'lowercase'|'trim'|'parse_date' }
+
+field_transform  – transforms a previously extracted key
+  { sourceKey: string, targetKey: string, operation: 'uppercase'|'lowercase'|'trim'|'replace'|'substring', pattern?: string, replacement?: string, start?: number, length?: number }
+
+match_transaction  – exact match on selected fields against pricelist line items
+  { matchFields: Array<'segment'|'clause'|'category'|'unitOfMeasure'|'remark'>, conflictResolution: 'first_match'|'error' }
+
+fuzzy_match  – scored partial match on selected fields
+  { matchFields: Array<'segment'|'clause'|'category'|'unitOfMeasure'|'remark'>, threshold: number (0-1) }
+
+filter  – gate on a field value; sets passFilter in context
+  { field: string, operator: 'equals'|'contains'|'gt'|'lt'|'gte'|'lte', value: string|number }
+
+conditional  – set a key to different values based on a condition
+  { condition: 'fieldName:expectedValue', ifTrueKey: string, ifTrueValue: any, ifFalseKey: string, ifFalseValue: any }
+
+Transaction fields available: id, date, segment, movementType, category, unitOfMeasure, description, quantity, orderNumber.
+Pricelist line item fields: segment, clause, category, unitOfMeasure, remark, rate, row.
+
+Return ONLY a JSON object in this exact format — no prose, no markdown fences:
+{
+  "steps": [ { "id": "step1", "type": "<type>", "enabled": true, "config": { ... } } ],
+  "explanation": "<one sentence describing what the rule does>"
+}`;
+
+  const userContent = [
+    `Customer: ${customer_id || 'unknown'}`,
+    `Description: ${description.trim()}`,
+    sample_transactions?.length
+      ? `Sample transactions:\n${JSON.stringify(sample_transactions.slice(0, 3), null, 2)}`
+      : null
+  ].filter(Boolean).join('\n\n');
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1024,
+        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: userContent }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error('[RuleAssistant] Anthropic API error:', err);
+      return res.status(502).json({ error: 'Anthropic API request failed', details: err });
+    }
+
+    const data: any = await response.json();
+    const raw = data?.content?.[0]?.text ?? '';
+
+    let parsed: { steps: any[]; explanation: string };
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return res.status(502).json({ error: 'Model returned non-JSON output', raw });
+    }
+
+    if (!Array.isArray(parsed.steps)) {
+      return res.status(502).json({ error: 'Model output missing steps array', raw });
+    }
+
+    const stepErrors = validateAssistantSteps(parsed.steps);
+    if (stepErrors.length > 0) {
+      return res.status(502).json({ error: 'Model returned invalid steps', details: stepErrors, raw });
+    }
+
+    // Ensure every step has enabled: true so it is usable out of the box
+    parsed.steps = parsed.steps.map((s: any) => ({ ...s, enabled: s.enabled !== false }));
+
+    res.json(parsed);
+  } catch (error) {
+    console.error('[RuleAssistant] Error:', error);
+    res.status(500).json({ error: 'Rule assistant failed', details: (error as Error).message });
   }
 });
 

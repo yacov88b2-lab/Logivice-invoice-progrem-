@@ -63,12 +63,26 @@ export interface MatchResult {
   sheetName: string;
   confidence: number;
   matchReason: string;
+  needsReview?: boolean;
+  reviewReason?: string;
+  alternatives?: Array<{
+    lineItem: LineItem;
+    sheetName: string;
+    score: number;
+  }>;
 }
 
 export interface UnmatchedItem {
   transaction: Transaction;
   reason: string;
   possibleMatches?: LineItem[];
+  needsReview?: boolean;
+  reviewReason?: string;
+  alternatives?: Array<{
+    lineItem: LineItem;
+    sheetName: string;
+    score: number;
+  }>;
 }
 
 export interface AuditEntry {

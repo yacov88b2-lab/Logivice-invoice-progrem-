@@ -89,4 +89,50 @@ describe('DataMapper.mapTransactions', () => {
     expect(matches).toHaveLength(0);
     expect(unmatched).toHaveLength(0);
   });
+
+  it('sends close fuzzy alternatives to review instead of billable matches', () => {
+    const tx = makeTransaction({
+      category: 'Fragile',
+      description: 'special handling',
+    });
+    const template: TemplateStructure = {
+      ...makeTemplate(),
+      sheets: [{
+        name: 'Total',
+        type: 'invoice',
+        rowCount: 2,
+        lineItems: [
+          {
+            row: 8,
+            segment: 'Inbound',
+            clause: 'Per Order',
+            category: 'Fragile',
+            unitOfMeasure: 'order',
+            remark: 'manual handling',
+            rate: 14.7,
+            qty: null,
+            total: 0,
+          },
+          {
+            row: 9,
+            segment: 'Inbound',
+            clause: 'Per Order',
+            category: 'Fragile',
+            unitOfMeasure: 'order',
+            remark: 'extra handling',
+            rate: 16,
+            qty: null,
+            total: 0,
+          },
+        ],
+      }],
+    };
+
+    const { matches, unmatched } = DataMapper.mapTransactions([tx], template, Buffer.alloc(0));
+
+    expect(matches).toHaveLength(0);
+    expect(unmatched).toHaveLength(1);
+    expect(unmatched[0].needsReview).toBe(true);
+    expect(unmatched[0].alternatives).toHaveLength(2);
+  });
 });

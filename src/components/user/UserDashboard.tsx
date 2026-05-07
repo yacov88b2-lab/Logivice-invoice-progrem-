@@ -16,6 +16,7 @@ export function UserDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<'select' | 'preview' | 'result'>('select');
   const [billingCycle, setBillingCycle] = useState<'custom' | 'full_month'>('full_month');
+  const [resolvedItems, setResolvedItems] = useState<Record<string, number>>({});
 
   const loadPricelists = async () => {
     setLoadingPricelists(true);
@@ -144,6 +145,7 @@ export function UserDashboard() {
     setResult(null);
     setStep('select');
     setError(null);
+    setResolvedItems({});
   }, [selectedCustomer, selectedWarehouse, selectedPricelist, billingCycle]);
 
   const handlePreview = async () => {
@@ -155,11 +157,11 @@ export function UserDashboard() {
     await executePreview();
   };
 
-  const executePreview = async () => {
+  const executePreview = async (withResolutions?: Record<string, number>) => {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.previewMapping(Number(selectedPricelist), startDate, endDate);
+      const data = await api.previewMapping(Number(selectedPricelist), startDate, endDate, withResolutions);
       setPreview(data);
       setStep('preview');
     } catch (err) {
@@ -183,7 +185,7 @@ export function UserDashboard() {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate);
+      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, 1, resolvedItems);
       setResult(data);
       setStep('result');
     } catch (err) {
@@ -254,11 +256,16 @@ export function UserDashboard() {
     })();
   };
 
+  const handleApplyResolutions = async () => {
+    await executePreview(resolvedItems);
+  };
+
   const handleReset = () => {
     setStep('select');
     setPreview(null);
     setResult(null);
     setError(null);
+    setResolvedItems({});
   };
 
   const handleBackToPreview = () => {
@@ -649,6 +656,22 @@ export function UserDashboard() {
             </div>
           )}
 
+          {preview.reviewQueue && preview.reviewQueue.length > 0 && (
+            <ReviewQueuePanel
+              reviewQueue={preview.reviewQueue}
+              resolvedItems={resolvedItems}
+              onResolve={(txId: string, idx: number | null) =>
+                setResolvedItems(prev =>
+                  idx === null
+                    ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== txId))
+                    : { ...prev, [txId]: idx }
+                )
+              }
+              onApply={handleApplyResolutions}
+              loading={loading}
+            />
+          )}
+
           {/* Show matched transactions summary */}
           {preview.summary.matched > 0 && (
             <div className="rounded border border-green-200 bg-green-50 p-4">
@@ -841,6 +864,100 @@ export function UserDashboard() {
         </div>
       )}
     </div>
+  );
+}
+
+function ReviewQueuePanel({
+  reviewQueue,
+  resolvedItems,
+  onResolve,
+  onApply,
+  loading,
+}: {
+  reviewQueue: NonNullable<PreviewResponse['reviewQueue']>;
+  resolvedItems: Record<string, number>;
+  onResolve: (txId: string, idx: number | null) => void;
+  onApply: () => void;
+  loading: boolean;
+}) {
+  const resolvedCount = reviewQueue.filter(item => resolvedItems[item.transaction.id] !== undefined).length;
+
+  return (
+    <section className="rounded border border-orange-200 bg-orange-50 p-4 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h4 className="font-semibold text-orange-900">
+            {reviewQueue.length} transaction{reviewQueue.length !== 1 ? 's' : ''} need manual selection
+          </h4>
+          <p className="mt-1 text-sm text-orange-800">
+            Multiple pricelist rows scored within 10% of each other. Pick the correct one for each transaction, then re-run the preview.
+          </p>
+        </div>
+        <span className="shrink-0 rounded bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-800">
+          {resolvedCount}/{reviewQueue.length} resolved
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        {reviewQueue.map(item => (
+          <div key={item.transaction.id} className="rounded border border-orange-200 bg-white p-3">
+            <div className="text-sm font-semibold text-slate-900">
+              {item.transaction.segment} — {item.transaction.movementType}
+              {item.transaction.category && ` (${item.transaction.category})`}
+            </div>
+            <div className="mt-0.5 text-xs text-slate-500">
+              {item.transaction.description} · QTY: {item.transaction.quantity} · {item.reason}
+            </div>
+            <div className="mt-2 space-y-1.5">
+              {item.alternatives.map((alt, idx) => (
+                <label
+                  key={idx}
+                  className={`flex cursor-pointer items-start gap-2 rounded border px-3 py-2 text-xs transition-colors ${
+                    resolvedItems[item.transaction.id] === idx
+                      ? 'border-[#28258b] bg-[#28258b]/5'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={`resolve-${item.transaction.id}`}
+                    checked={resolvedItems[item.transaction.id] === idx}
+                    onChange={() => onResolve(item.transaction.id, idx)}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <span>
+                    <span className="font-semibold text-slate-800">
+                      {alt.lineItem.sheet} row {alt.lineItem.row}
+                    </span>
+                    <span className="ml-2 text-slate-600">
+                      {alt.lineItem.segment} / {alt.lineItem.clause}
+                    </span>
+                    {alt.lineItem.remark && (
+                      <span className="ml-2 text-slate-400">· {alt.lineItem.remark}</span>
+                    )}
+                    <span className="ml-2 font-medium text-[#58a967]">
+                      {(alt.score * 100).toFixed(0)}% match
+                    </span>
+                    {alt.lineItem.rate != null && (
+                      <span className="ml-2 text-slate-400">· rate: {alt.lineItem.rate}</span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={onApply}
+        disabled={loading || resolvedCount === 0}
+        className="w-full rounded border border-orange-300 bg-white px-4 py-2.5 text-sm font-semibold text-orange-900 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {loading ? 'Re-running preview…' : `Apply ${resolvedCount} selection${resolvedCount !== 1 ? 's' : ''} & re-run preview`}
+      </button>
+    </section>
   );
 }
 

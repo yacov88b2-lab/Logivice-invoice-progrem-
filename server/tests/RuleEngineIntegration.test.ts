@@ -42,6 +42,7 @@ describe('RuleEngine Integration Tests', () => {
         description: 'Test rule for full pipeline',
         version: 1,
         enabled: true,
+        approval_status: 'approved',
         ruleType: 'matching',
         steps: [
           {
@@ -156,6 +157,7 @@ describe('RuleEngine Integration Tests', () => {
         name: 'Versioned Rule',
         version: 1,
         enabled: true,
+        approval_status: 'approved',
         ruleType: 'matching',
         steps: [
           {
@@ -194,6 +196,7 @@ describe('RuleEngine Integration Tests', () => {
         name: 'Original Name',
         version: 1,
         enabled: true,
+        approval_status: 'approved',
         ruleType: 'matching',
         steps: []
       };
@@ -230,6 +233,7 @@ describe('RuleEngine Integration Tests', () => {
         name: 'Toggle Test',
         version: 1,
         enabled: true,
+        approval_status: 'approved',
         ruleType: 'matching',
         steps: []
       };
@@ -258,6 +262,36 @@ describe('RuleEngine Integration Tests', () => {
       expect(enabledEntry).toBeDefined();
     });
 
+    it('should persist approval status and only activate approved enabled rules', async () => {
+      const rule: CustomerRuleDefinition = {
+        customer_id: testCustomerId,
+        name: 'Approval Flow Test',
+        version: 1,
+        enabled: false,
+        approval_status: 'draft',
+        ruleType: 'matching',
+        steps: []
+      };
+
+      const saved = CustomerRuleModel.create(rule);
+      expect(saved.approval_status).toBe('draft');
+
+      expect(() => CustomerRuleModel.update(saved.id!, { enabled: true })).toThrow(/approved/);
+
+      const tested = CustomerRuleModel.markTested(saved.id!, 'integration_test');
+      expect(tested!.approval_status).toBe('tested');
+
+      const approved = CustomerRuleModel.markApproved(saved.id!, 'integration_test');
+      expect(approved!.approval_status).toBe('approved');
+
+      const enabled = CustomerRuleModel.update(saved.id!, { enabled: true, updated_by: 'integration_test' });
+      expect(enabled!.enabled).toBe(true);
+
+      const active = CustomerRuleModel.getActiveByCustomer(testCustomerId);
+      expect(active!.id).toBe(saved.id);
+      expect(active!.approval_status).toBe('approved');
+    });
+
     it('should handle multi-customer isolation', async () => {
       const customerId1 = `customer_1_${Date.now()}`;
       const customerId2 = `customer_2_${Date.now()}`;
@@ -268,6 +302,7 @@ describe('RuleEngine Integration Tests', () => {
         name: 'Rule for Customer 1',
         version: 1,
         enabled: true,
+        approval_status: 'approved',
         ruleType: 'matching',
         steps: []
       };
@@ -277,6 +312,7 @@ describe('RuleEngine Integration Tests', () => {
         name: 'Rule for Customer 2',
         version: 1,
         enabled: true,
+        approval_status: 'approved',
         ruleType: 'matching',
         steps: []
       };
@@ -307,6 +343,7 @@ describe('RuleEngine Integration Tests', () => {
         name: 'Complex Multi-Step',
         version: 1,
         enabled: true,
+        approval_status: 'approved',
         ruleType: 'matching',
         steps: [
           {
@@ -400,6 +437,122 @@ describe('RuleEngine Integration Tests', () => {
     });
   });
 
+  describe('Complete Approval Lifecycle', () => {
+    it('should enforce draft → tested → approved → enabled state machine', async () => {
+      const rule = CustomerRuleModel.create({
+        customer_id: testCustomerId,
+        name: 'Lifecycle Test Rule',
+        version: 1,
+        enabled: false,
+        approval_status: 'draft',
+        ruleType: 'matching',
+        steps: []
+      });
+
+      // Cannot enable from draft
+      expect(() => CustomerRuleModel.update(rule.id, { enabled: true })).toThrow(/approved/);
+      expect(CustomerRuleModel.getActiveByCustomer(testCustomerId)).toBeUndefined();
+
+      // Mark tested
+      const tested = CustomerRuleModel.markTested(rule.id, 'qa');
+      expect(tested!.approval_status).toBe('tested');
+
+      // Cannot enable from tested (needs approved)
+      expect(() => CustomerRuleModel.update(rule.id, { enabled: true })).toThrow(/approved/);
+
+      // Cannot approve from draft (markApproved requires tested)
+      // Already tested — approve it
+      const approved = CustomerRuleModel.markApproved(rule.id, 'admin');
+      expect(approved!.approval_status).toBe('approved');
+
+      // Now enable
+      const enabled = CustomerRuleModel.update(rule.id, { enabled: true, updated_by: 'admin' });
+      expect(enabled!.enabled).toBe(true);
+
+      // Verify it surfaces as the active rule
+      const active = CustomerRuleModel.getActiveByCustomer(testCustomerId);
+      expect(active!.id).toBe(rule.id);
+      expect(active!.enabled).toBe(true);
+      expect(active!.approval_status).toBe('approved');
+    });
+
+    it('should block revert while enabled and allow it after disable', async () => {
+      const rule = CustomerRuleModel.create({
+        customer_id: testCustomerId,
+        name: 'Revert Test Rule',
+        version: 1,
+        enabled: false,
+        approval_status: 'approved',
+        ruleType: 'matching',
+        steps: []
+      });
+
+      // Enable it
+      CustomerRuleModel.update(rule.id, { enabled: true, updated_by: 'admin' });
+
+      // Cannot revert while enabled
+      expect(() => CustomerRuleModel.revertToDraft(rule.id, 'admin')).toThrow(/Disable/i);
+
+      // Disable first
+      CustomerRuleModel.update(rule.id, { enabled: false, updated_by: 'admin' });
+
+      // Now revert succeeds
+      const reverted = CustomerRuleModel.revertToDraft(rule.id, 'admin');
+      expect(reverted!.approval_status).toBe('draft');
+      expect(reverted!.enabled).toBe(false);
+
+      // No longer active
+      expect(CustomerRuleModel.getActiveByCustomer(testCustomerId)).toBeUndefined();
+    });
+
+    it('should reject markApproved if rule is still in draft', async () => {
+      const rule = CustomerRuleModel.create({
+        customer_id: testCustomerId,
+        name: 'Draft Approve Test',
+        version: 1,
+        enabled: false,
+        approval_status: 'draft',
+        ruleType: 'matching',
+        steps: []
+      });
+
+      expect(() => CustomerRuleModel.markApproved(rule.id, 'admin')).toThrow(/tested/);
+    });
+
+    it('should allow only one active rule per customer', async () => {
+      // Create and fully enable rule v1
+      const r1 = CustomerRuleModel.create({
+        customer_id: testCustomerId,
+        name: 'Rule V1',
+        version: 1,
+        enabled: false,
+        approval_status: 'approved',
+        ruleType: 'matching',
+        steps: []
+      });
+      CustomerRuleModel.update(r1.id, { enabled: true, updated_by: 'admin' });
+
+      // Create and fully enable rule v2 via the toggle route logic (disable others first)
+      const r2 = CustomerRuleModel.create({
+        customer_id: testCustomerId,
+        name: 'Rule V2',
+        version: 2,
+        enabled: false,
+        approval_status: 'approved',
+        ruleType: 'matching',
+        steps: []
+      });
+
+      // Simulate toggle endpoint: disable r1 before enabling r2
+      CustomerRuleModel.update(r1.id, { enabled: false, updated_by: 'admin' });
+      CustomerRuleModel.update(r2.id, { enabled: true, updated_by: 'admin' });
+
+      const active = CustomerRuleModel.getActiveByCustomer(testCustomerId);
+      expect(active!.id).toBe(r2.id);
+      expect(active!.version).toBe(2);
+    });
+  });
+
   describe('Error Recovery', () => {
     it('should continue execution after step with warnings', async () => {
       const rule: CustomerRuleDefinition = {
@@ -407,6 +560,7 @@ describe('RuleEngine Integration Tests', () => {
         name: 'Continue on Warning',
         version: 1,
         enabled: true,
+        approval_status: 'approved',
         ruleType: 'matching',
         steps: [
           {

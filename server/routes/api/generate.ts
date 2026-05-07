@@ -14,6 +14,46 @@ import { RuleEngine } from '../../services/RuleEngine';
 
 const router = express.Router();
 
+// Run the customer's active rule as a fallback matcher on transactions DataMapper couldn't place.
+// Only touches items that had no match at all (not review-queue candidates — those need human selection).
+async function applyRuleOverrides(
+  customerName: string,
+  unmatchedItems: any[],
+  templateStructure: any
+): Promise<any[]> {
+  const activeRule = CustomerRuleModel.getActiveByCustomer(customerName);
+  if (!activeRule || unmatchedItems.length === 0) return [];
+
+  const lineItems = getInvoiceLineItems(templateStructure);
+  const additionalMatches: any[] = [];
+
+  for (const u of unmatchedItems) {
+    if (u.needsReview) continue;
+    try {
+      const result = await RuleEngine.evaluateRule(activeRule, {
+        transaction: u.transaction,
+        lineItems,
+        templateStructure,
+        previousResults: {}
+      });
+      if (result.success && result.data.matchedLineItem) {
+        const matched = result.data.matchedLineItem;
+        additionalMatches.push({
+          lineItem: matched,
+          transaction: u.transaction,
+          sheetName: matched.sheetName || '',
+          confidence: result.data.matches?.[0]?.confidence ?? 0.9,
+          matchReason: `Rule match: ${activeRule.name} v${activeRule.version}`
+        });
+      }
+    } catch {
+      // Rule evaluation failures must never break invoice generation
+    }
+  }
+
+  return additionalMatches;
+}
+
 function getInvoiceLineItems(templateStructure: any) {
   const lineItems: any[] = [];
   for (const sheet of templateStructure?.sheets || []) {
@@ -213,12 +253,13 @@ router.post('/export-total', async (req, res) => {
 // Generate invoice from pricelist + API data or Excel file data
 router.post('/invoice', async (req, res) => {
   try {
-    const { 
-      pricelist_id, 
-      start_date, 
-      end_date, 
-      use_excel_data = true,  // Default to using Excel data from uploaded file
-      user_id = 1 
+    const {
+      pricelist_id,
+      start_date,
+      end_date,
+      use_excel_data = true,
+      user_id = 1,
+      resolvedItems
     } = req.body;
 
     if (!pricelist_id || !start_date || !end_date) {
@@ -290,11 +331,42 @@ router.post('/invoice', async (req, res) => {
     }
 
     // Map transactions to line items
-    const { matches, unmatched } = DataMapper.mapTransactions(
+    const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(
       transactions,
       pricelist.template_structure,
       pricelistBuffer
     );
+
+    // Apply manual resolutions carried forward from the preceding preview session
+    const resolutionMap: Record<string, number> =
+      resolvedItems && typeof resolvedItems === 'object' ? resolvedItems : {};
+    const resolvedExtraMatches: any[] = [];
+    const afterResolutionUnmatched: any[] = [];
+    for (const u of dmUnmatched) {
+      const selectedIdx = resolutionMap[(u as any).transaction?.id];
+      if ((u as any).needsReview && (u as any).alternatives?.length && selectedIdx !== undefined) {
+        const alt = (u as any).alternatives[selectedIdx];
+        if (alt) {
+          resolvedExtraMatches.push({
+            lineItem: alt.lineItem,
+            transaction: (u as any).transaction,
+            sheetName: alt.sheetName,
+            confidence: alt.score,
+            matchReason: `Manually resolved (score: ${(alt.score * 100).toFixed(0)}%)`
+          });
+          continue;
+        }
+      }
+      afterResolutionUnmatched.push(u);
+    }
+
+    // Rule engine fallback: rescue truly-unmatched items the DataMapper couldn't place
+    const ruleMatches = await applyRuleOverrides(pricelist.customer_name, afterResolutionUnmatched, pricelist.template_structure);
+    const ruleMatchedIds = new Set(ruleMatches.map((m: any) => m.transaction.id));
+    const matches = [...dmMatches, ...resolvedExtraMatches, ...ruleMatches];
+    const unmatched = afterResolutionUnmatched.filter((u: any) => !ruleMatchedIds.has(u.transaction.id));
+
+    const reviewRequired = unmatched.filter((u: any) => u.needsReview).length;
     const ruleDiagnostics = await buildRuleDiagnostics(
       pricelist.customer_name,
       transactions,
@@ -364,6 +436,7 @@ router.post('/invoice', async (req, res) => {
         totalTransactions: transactions.length,
         matchedTransactions: matches.length,
         unmatchedTransactions: unmatched.length,
+        reviewRequired,
         activeRuleId: ruleDiagnostics.activeRule?.id ?? null,
         activeRuleVersion: ruleDiagnostics.activeRule?.version ?? null
       }),
@@ -387,6 +460,7 @@ router.post('/invoice', async (req, res) => {
         totalTransactions: transactions.length,
         matched: matches.length,
         unmatched: unmatched.length,
+        reviewRequired,
         filledRows: fillResult.filledRows.length
       },
       matches: matches.map((m: any) => ({
@@ -406,7 +480,10 @@ router.post('/invoice', async (req, res) => {
           category: u.transaction.category,
           description: u.transaction.description
         },
-        reason: u.reason
+        reason: u.reason,
+        needsReview: u.needsReview,
+        reviewReason: u.reviewReason,
+        alternatives: u.alternatives
       })),
       filledRows: fillResult.filledRows,
       errors: fillResult.errors,
@@ -424,11 +501,11 @@ router.post('/invoice', async (req, res) => {
 // Preview mapping without generating (dry run)
 router.post('/preview', async (req, res) => {
   try {
-    const { pricelist_id, start_date, end_date } = req.body;
+    const { pricelist_id, start_date, end_date, resolvedItems } = req.body;
 
     if (!pricelist_id || !start_date || !end_date) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: pricelist_id, start_date, end_date' 
+      return res.status(400).json({
+        error: 'Missing required fields: pricelist_id, start_date, end_date'
       });
     }
 
@@ -443,7 +520,7 @@ router.post('/preview', async (req, res) => {
 
     // Get transactions from Excel file (like generate endpoint)
     let transactions = ExcelDataExtractor.extractFromAnalyzeSheet(pricelistBuffer);
-    
+
     // If no data in Excel, fallback to Tableau API
     if (transactions.length === 0) {
       console.log('No data in Excel Analyze sheet, falling back to Tableau API');
@@ -465,11 +542,44 @@ router.post('/preview', async (req, res) => {
     }
 
     // Map transactions (dry run)
-    const { matches, unmatched } = DataMapper.mapTransactions(
+    const { matches: rawMatches, unmatched: rawUnmatched } = DataMapper.mapTransactions(
       transactions,
       pricelist.template_structure,
       pricelistBuffer
     );
+
+    // Apply manual resolutions: move reviewer-selected alternatives into confirmed matches
+    const resolutionMap: Record<string, number> =
+      resolvedItems && typeof resolvedItems === 'object' ? resolvedItems : {};
+    const resolvedMatches: any[] = [];
+    const stillUnmatched: any[] = [];
+    for (const u of rawUnmatched) {
+      const selectedIdx = resolutionMap[(u as any).transaction?.id];
+      if ((u as any).needsReview && (u as any).alternatives?.length && selectedIdx !== undefined) {
+        const alt = (u as any).alternatives[selectedIdx];
+        if (alt) {
+          resolvedMatches.push({
+            lineItem: alt.lineItem,
+            transaction: (u as any).transaction,
+            sheetName: alt.sheetName,
+            confidence: alt.score,
+            matchReason: `Manually resolved (score: ${(alt.score * 100).toFixed(0)}%)`
+          });
+          continue;
+        }
+      }
+      stillUnmatched.push(u);
+    }
+    // Rule engine fallback: rescue truly-unmatched items (skip review-queue — those need human selection)
+    const ruleMatches = await applyRuleOverrides(
+      pricelist.customer_name,
+      stillUnmatched.filter((u: any) => !u.needsReview),
+      pricelist.template_structure
+    );
+    const ruleMatchedIds = new Set(ruleMatches.map((m: any) => m.transaction.id));
+    const matches = [...rawMatches, ...resolvedMatches, ...ruleMatches];
+    const unmatched = stillUnmatched.filter((u: any) => !ruleMatchedIds.has(u.transaction.id));
+
     const ruleDiagnostics = await buildRuleDiagnostics(
       pricelist.customer_name,
       transactions,
@@ -478,30 +588,21 @@ router.post('/preview', async (req, res) => {
       unmatched
     );
 
-    // Count review-required matches
-    const reviewRequired = matches.filter((m: any) => m.needsReview).length;
-    const reviewQueue = matches
-      .filter((m: any) => m.needsReview && m.alternatives)
-      .map((m: any) => ({
+    // Count review-required items. These are excluded from billable matches.
+    const reviewRequired = unmatched.filter((u: any) => u.needsReview).length;
+    const reviewQueue = unmatched
+      .filter((u: any) => u.needsReview && u.alternatives)
+      .map((u: any) => ({
         transaction: {
-          id: m.transaction.id,
-          date: m.transaction.date,
-          segment: m.transaction.segment,
-          movementType: m.transaction.movementType,
-          category: m.transaction.category,
-          description: m.transaction.description,
-          quantity: m.transaction.quantity
+          id: u.transaction.id,
+          date: u.transaction.date,
+          segment: u.transaction.segment,
+          movementType: u.transaction.movementType,
+          category: u.transaction.category,
+          description: u.transaction.description,
+          quantity: u.transaction.quantity
         },
-        currentMatch: {
-          sheet: m.sheetName,
-          row: m.lineItem.row,
-          segment: m.lineItem.segment,
-          clause: m.lineItem.clause,
-          category: m.lineItem.category,
-          remark: m.lineItem.remark,
-          rate: m.lineItem.rate
-        },
-        alternatives: m.alternatives.map((alt: any) => ({
+        alternatives: u.alternatives.map((alt: any) => ({
           lineItem: {
             sheet: alt.sheetName,
             row: alt.lineItem.row,
@@ -513,7 +614,7 @@ router.post('/preview', async (req, res) => {
           },
           score: alt.score
         })),
-        reason: m.reviewReason || m.matchReason
+        reason: u.reviewReason || u.reason
       }));
 
     res.json({
@@ -581,7 +682,9 @@ router.post('/preview', async (req, res) => {
           quantity: u.transaction.quantity
         },
         reason: u.reason,
-        needsReview: u.needsReview
+        needsReview: u.needsReview,
+        reviewReason: u.reviewReason,
+        alternatives: u.alternatives
       })),
       reviewQueue: reviewQueue.length > 0 ? reviewQueue : undefined
     });

@@ -7,12 +7,14 @@ export class CustomerRuleModel {
     const now = new Date().toISOString();
     const createdBy = rule.created_by || 'system';
     const updatedBy = rule.updated_by || createdBy;
+    const approvalStatus = rule.approval_status || 'draft';
+    const enabled = rule.enabled && approvalStatus === 'approved';
 
     const stmt = db.prepare(`
       INSERT INTO customer_rules (
         id, customer_id, name, description, version, enabled, 
-        rule_type, steps, created_at, created_by, updated_at, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        approval_status, rule_type, steps, created_at, created_by, updated_at, updated_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -21,7 +23,8 @@ export class CustomerRuleModel {
       rule.name,
       rule.description || null,
       rule.version,
-      rule.enabled ? 1 : 0,
+      enabled ? 1 : 0,
+      approvalStatus,
       rule.ruleType,
       JSON.stringify(rule.steps),
       now,
@@ -55,7 +58,7 @@ export class CustomerRuleModel {
   static getActiveByCustomer(customerId: string): CustomerRuleDefinition | undefined {
     const stmt = db.prepare(`
       SELECT * FROM customer_rules 
-      WHERE customer_id = ? AND enabled = 1 
+      WHERE customer_id = ? AND enabled = 1 AND approval_status = 'approved'
       ORDER BY version DESC 
       LIMIT 1
     `);
@@ -92,9 +95,17 @@ export class CustomerRuleModel {
       updateFields.push('version = ?');
       values.push(updates.version);
     }
+    if (updates.enabled === true && existing.approval_status !== 'approved' && updates.approval_status !== 'approved') {
+      throw new Error('Rule must be approved before it can be enabled');
+    }
+
     if (updates.enabled !== undefined) {
       updateFields.push('enabled = ?');
       values.push(updates.enabled ? 1 : 0);
+    }
+    if (updates.approval_status !== undefined) {
+      updateFields.push('approval_status = ?');
+      values.push(updates.approval_status);
     }
     if (updates.steps !== undefined) {
       updateFields.push('steps = ?');
@@ -129,7 +140,8 @@ export class CustomerRuleModel {
       updates.description !== undefined ||
       updates.version !== undefined ||
       updates.steps !== undefined ||
-      updates.ruleType !== undefined
+      updates.ruleType !== undefined ||
+      updates.approval_status !== undefined
     ) {
       db.prepare(`
         INSERT INTO rule_audit_log (rule_id, action, old_value, new_value, changed_by)
@@ -176,31 +188,20 @@ export class CustomerRuleModel {
       updated_by: testedBy || 'system'
     });
 
-    if (updated) {
-      db.prepare(`
-        INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
-        VALUES (?, 'updated', ?, ?)
-      `).run(id, 'approval_status: tested', testedBy || 'system');
-    }
-
     return updated;
   }
 
   static markApproved(id: string, approvedBy?: string): CustomerRuleDefinition | undefined {
     const existing = this.getById(id);
     if (!existing) return undefined;
+    if (existing.approval_status !== 'tested') {
+      throw new Error('Rule must be marked as tested before approval');
+    }
 
     const updated = this.update(id, {
       approval_status: 'approved',
       updated_by: approvedBy || 'system'
     });
-
-    if (updated) {
-      db.prepare(`
-        INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
-        VALUES (?, 'updated', ?, ?)
-      `).run(id, 'approval_status: approved', approvedBy || 'system');
-    }
 
     return updated;
   }
@@ -208,18 +209,14 @@ export class CustomerRuleModel {
   static revertToDraft(id: string, revertedBy?: string): CustomerRuleDefinition | undefined {
     const existing = this.getById(id);
     if (!existing) return undefined;
+    if (existing.enabled) {
+      throw new Error('Cannot revert enabled rule to draft. Disable it first.');
+    }
 
     const updated = this.update(id, {
       approval_status: 'draft',
       updated_by: revertedBy || 'system'
     });
-
-    if (updated) {
-      db.prepare(`
-        INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
-        VALUES (?, 'updated', ?, ?)
-      `).run(id, 'approval_status: draft', revertedBy || 'system');
-    }
 
     return updated;
   }

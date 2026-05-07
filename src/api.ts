@@ -79,26 +79,25 @@ export const api = {
   },
 
   // Generation
-  previewMapping: async (pricelistId: number, startDate: string, endDate: string) => {
+  previewMapping: async (pricelistId: number, startDate: string, endDate: string, resolvedItems?: Record<string, number>) => {
+    const body: Record<string, unknown> = { pricelist_id: pricelistId, start_date: startDate, end_date: endDate };
+    if (resolvedItems && Object.keys(resolvedItems).length > 0) body.resolvedItems = resolvedItems;
     const res = await fetch(`${API_BASE}/generate/preview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pricelist_id: pricelistId, start_date: startDate, end_date: endDate }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to preview mapping'));
     return res.json();
   },
 
-  generateInvoice: async (pricelistId: number, startDate: string, endDate: string, userId: number = 1) => {
+  generateInvoice: async (pricelistId: number, startDate: string, endDate: string, userId: number = 1, resolvedItems?: Record<string, number>) => {
+    const body: Record<string, unknown> = { pricelist_id: pricelistId, start_date: startDate, end_date: endDate, user_id: userId };
+    if (resolvedItems && Object.keys(resolvedItems).length > 0) body.resolvedItems = resolvedItems;
     const res = await fetch(`${API_BASE}/generate/invoice`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        pricelist_id: pricelistId, 
-        start_date: startDate, 
-        end_date: endDate,
-        user_id: userId 
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to generate invoice'));
     const data = await res.json();
@@ -176,6 +175,47 @@ export const api = {
     });
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to test rule'));
     return res.json();
+  },
+
+  markRuleTested: async (id: string) => {
+    const res = await fetch(`${API_BASE}/rules/${id}/mark-tested`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tested_by: 'admin' }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to mark rule as tested'));
+    return res.json();
+  },
+
+  approveRule: async (id: string) => {
+    const res = await fetch(`${API_BASE}/rules/${id}/approve`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved_by: 'admin' }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to approve rule'));
+    return res.json();
+  },
+
+  revertRuleToDraft: async (id: string) => {
+    const res = await fetch(`${API_BASE}/rules/${id}/revert-to-draft`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reverted_by: 'admin' }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to revert rule to draft'));
+    return res.json();
+  },
+
+  // Rule Assistant
+  suggestRuleSteps: async (customerId: string, description: string, sampleTransactions?: unknown[]) => {
+    const res = await fetch(`${API_BASE}/rules/assistant/suggest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer_id: customerId, description, sample_transactions: sampleTransactions }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Rule assistant request failed'));
+    return res.json() as Promise<{ steps: unknown[]; explanation: string }>;
   },
 
   // Bug reports

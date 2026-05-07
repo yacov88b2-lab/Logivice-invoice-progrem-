@@ -17,6 +17,7 @@ export interface CustomerRuleDefinition {
   description?: string;
   version: number;
   enabled: boolean;
+  approval_status?: 'draft' | 'tested' | 'approved';
   ruleType: 'matching' | 'transformation' | 'aggregation';
   steps: RuleStep[];
   created_at?: string;

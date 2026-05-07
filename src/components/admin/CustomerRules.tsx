@@ -3,9 +3,10 @@ import { api } from '../../api';
 import { RuleWizard } from './RuleWizard';
 import type { CustomerRuleDefinition } from './RuleBuilder';
 import { RuleTest } from './RuleTest';
+import { RuleAssistant } from './RuleAssistant';
 import type { Pricelist } from '../../types';
 
-type ViewMode = 'list' | 'edit' | 'test';
+type ViewMode = 'list' | 'edit' | 'test' | 'assistant';
 
 export function CustomerRules() {
   const [rules, setRules] = useState<CustomerRuleDefinition[]>([]);
@@ -73,6 +74,33 @@ export function CustomerRules() {
     }
   };
 
+  const handleMarkTested = async (rule: CustomerRuleDefinition) => {
+    try {
+      await api.markRuleTested(rule.id!);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to mark rule as tested');
+    }
+  };
+
+  const handleApprove = async (rule: CustomerRuleDefinition) => {
+    try {
+      await api.approveRule(rule.id!);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to approve rule');
+    }
+  };
+
+  const handleRevertToDraft = async (rule: CustomerRuleDefinition) => {
+    try {
+      await api.revertRuleToDraft(rule.id!);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to revert rule to draft');
+    }
+  };
+
   const handleDelete = async (rule: CustomerRuleDefinition) => {
     if (!confirm(`Delete rule "${rule.name}"?`)) return;
     try {
@@ -110,6 +138,18 @@ export function CustomerRules() {
     );
   }
 
+  if (mode === 'assistant') {
+    return (
+      <div className="space-y-5">
+        <RuleAssistant
+          customerId={selectedCustomer}
+          onSaved={() => { loadData(); setMode('list'); }}
+          onCancel={() => setMode('list')}
+        />
+      </div>
+    );
+  }
+
   if (mode === 'test' && selectedRule) {
     return (
       <div className="space-y-5">
@@ -141,13 +181,22 @@ export function CustomerRules() {
             Manage database-backed customer billing rules without changing code.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={startNewRule}
-          className="rounded bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
-        >
-          New Rule
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode('assistant')}
+            className="rounded border border-[#28258b]/30 bg-[#28258b]/10 px-4 py-2 text-sm font-semibold text-[#28258b] hover:bg-[#28258b]/15"
+          >
+            AI Assistant
+          </button>
+          <button
+            type="button"
+            onClick={startNewRule}
+            className="rounded bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
+          >
+            New Rule
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -203,6 +252,7 @@ export function CustomerRules() {
                   <th className="p-4 text-left font-semibold">Type</th>
                   <th className="p-4 text-left font-semibold">Steps</th>
                   <th className="p-4 text-left font-semibold">Status</th>
+                  <th className="p-4 text-left font-semibold">Approval</th>
                   <th className="p-4 text-left font-semibold">Updated</th>
                   <th className="p-4 text-left font-semibold">Actions</th>
                 </tr>
@@ -220,14 +270,29 @@ export function CustomerRules() {
                       <button
                         type="button"
                         onClick={() => handleToggle(rule)}
+                        disabled={!rule.enabled && rule.approval_status !== 'approved'}
                         className={`rounded px-2.5 py-1 text-xs font-semibold ${
                           rule.enabled
                             ? 'bg-[#e9f6ec] text-[#28753a]'
-                            : 'bg-slate-100 text-slate-600'
+                            : rule.approval_status === 'approved'
+                              ? 'bg-slate-100 text-slate-600'
+                              : 'cursor-not-allowed bg-slate-100 text-slate-400'
                         }`}
+                        title={!rule.enabled && rule.approval_status !== 'approved' ? 'Approve rule before enabling' : undefined}
                       >
                         {rule.enabled ? 'Enabled' : 'Disabled'}
                       </button>
+                    </td>
+                    <td className="p-4">
+                      <span className={`rounded px-2.5 py-1 text-xs font-semibold capitalize ${
+                        rule.approval_status === 'approved'
+                          ? 'bg-[#e9f6ec] text-[#28753a]'
+                          : rule.approval_status === 'tested'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {rule.approval_status || 'draft'}
+                      </span>
                     </td>
                     <td className="p-4 text-slate-600">
                       {rule.updated_at ? new Date(rule.updated_at).toLocaleDateString() : '-'}
@@ -254,6 +319,33 @@ export function CustomerRules() {
                         >
                           Test
                         </button>
+                        {rule.approval_status === 'draft' && (
+                          <button
+                            type="button"
+                            onClick={() => handleMarkTested(rule)}
+                            className="rounded bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-200"
+                          >
+                            Mark Tested
+                          </button>
+                        )}
+                        {rule.approval_status === 'tested' && (
+                          <button
+                            type="button"
+                            onClick={() => handleApprove(rule)}
+                            className="rounded bg-[#e9f6ec] px-3 py-1 text-xs font-semibold text-[#28753a] hover:bg-green-100"
+                          >
+                            Approve
+                          </button>
+                        )}
+                        {rule.approval_status !== 'draft' && !rule.enabled && (
+                          <button
+                            type="button"
+                            onClick={() => handleRevertToDraft(rule)}
+                            className="rounded bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                          >
+                            Revert
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDelete(rule)}
