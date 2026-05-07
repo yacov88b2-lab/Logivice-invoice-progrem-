@@ -214,4 +214,106 @@ export class DataMapper {
 
     return aggregated;
   }
+
+  static getMatchDiagnostics(
+    transaction: Transaction,
+    templateStructure: TemplateStructure
+  ): any {
+    const matchKey = this.createMatchKey(
+      transaction.segment,
+      transaction.movementType,
+      transaction.category,
+      transaction.unitOfMeasure,
+      transaction.description
+    );
+
+    // Build index to get all keys
+    const lineItemIndex = new Map<string, { item: LineItem; sheetName: string }[]>();
+    const allKeys: string[] = [];
+    
+    for (const sheet of templateStructure.sheets) {
+      if (sheet.type !== 'invoice') continue;
+      
+      for (const item of sheet.lineItems) {
+        const key = this.createMatchKey(item.segment, item.clause, item.category, item.unitOfMeasure, item.remark);
+        
+        if (!lineItemIndex.has(key)) {
+          lineItemIndex.set(key, []);
+        }
+        lineItemIndex.get(key)!.push({ item, sheetName: sheet.name });
+        if (!allKeys.includes(key)) {
+          allKeys.push(key);
+        }
+      }
+    }
+
+    const candidates = lineItemIndex.get(matchKey);
+
+    if (candidates && candidates.length > 0) {
+      if (candidates.length === 1) {
+        return {
+          normalizedTransactionKey: matchKey,
+          normalizedLineItemKeys: allKeys,
+          candidatesConsidered: 1,
+          matchType: 'exact',
+          matchReason: 'Exact match on all fields (segment, clause, category, UOM, remark)',
+          confidence: 1.0
+        };
+      } else {
+        return {
+          normalizedTransactionKey: matchKey,
+          normalizedLineItemKeys: allKeys,
+          candidatesConsidered: candidates.length,
+          matchType: 'ambiguous',
+          matchReason: `Multiple identical line items found (${candidates.length}). Need disambiguation.`,
+          alternatives: candidates.map(c => ({
+            lineItem: { ...c.item, sheet: c.sheetName },
+            score: 1.0
+          }))
+        };
+      }
+    }
+
+    // Try fuzzy match
+    const fuzzyMatches = this.fuzzyMatch(transaction, templateStructure);
+    
+    if (fuzzyMatches.length === 0) {
+      return {
+        normalizedTransactionKey: matchKey,
+        normalizedLineItemKeys: allKeys,
+        candidatesConsidered: 0,
+        matchType: 'unmatched',
+        matchReason: 'No matching line item found in pricelist',
+        scoreBreakdown: { total: 0 }
+      };
+    }
+
+    if (fuzzyMatches.length === 1) {
+      return {
+        normalizedTransactionKey: matchKey,
+        normalizedLineItemKeys: allKeys,
+        candidatesConsidered: 1,
+        matchType: 'fuzzy',
+        matchReason: `Fuzzy match (score: ${(fuzzyMatches[0].score * 100).toFixed(0)}%)`,
+        scoreBreakdown: { total: fuzzyMatches[0].score },
+        confidence: fuzzyMatches[0].score,
+        alternatives: []
+      };
+    }
+
+    // Multiple fuzzy matches - show top 3
+    return {
+      normalizedTransactionKey: matchKey,
+      normalizedLineItemKeys: allKeys,
+      candidatesConsidered: fuzzyMatches.length,
+      matchType: 'fuzzy',
+      matchReason: `Best fuzzy match (score: ${(fuzzyMatches[0].score * 100).toFixed(0)}%), alternatives available`,
+      scoreBreakdown: { total: fuzzyMatches[0].score },
+      confidence: fuzzyMatches[0].score,
+      alternatives: fuzzyMatches.map(m => ({
+        lineItem: { ...m.item, sheet: m.sheetName },
+        score: m.score
+      }))
+    };
+  }
 }

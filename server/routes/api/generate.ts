@@ -25,7 +25,13 @@ function getInvoiceLineItems(templateStructure: any) {
   return lineItems;
 }
 
-async function buildRuleDiagnostics(customerName: string, transactions: any[], templateStructure: any) {
+async function buildRuleDiagnostics(
+  customerName: string,
+  transactions: any[],
+  templateStructure: any,
+  mapperMatches?: any[],
+  mapperUnmatched?: any[]
+) {
   const activeRule = CustomerRuleModel.getActiveByCustomer(customerName);
   if (!activeRule) {
     return {
@@ -42,6 +48,12 @@ async function buildRuleDiagnostics(customerName: string, transactions: any[], t
       templateStructure,
       previousResults: {}
     });
+
+    // Get DataMapper diagnostics
+    const matcherDiag = DataMapper.getMatchDiagnostics(transaction, templateStructure);
+
+    // Find corresponding mapper match result
+    const mapperMatch = mapperMatches?.find(m => m.transaction?.id === transaction.id);
 
     return {
       transactionId: transaction.id,
@@ -60,7 +72,12 @@ async function buildRuleDiagnostics(customerName: string, transactions: any[], t
             category: result.data.matchedLineItem.category,
             remark: result.data.matchedLineItem.remark
           }
-        : null
+        : null,
+      matcherDiagnostic: matcherDiag,
+      dataMapperMatch: mapperMatch ? {
+        confidence: mapperMatch.confidence,
+        matchReason: mapperMatch.matchReason
+      } : undefined
     };
   }));
 
@@ -280,7 +297,9 @@ router.post('/invoice', async (req, res) => {
     const ruleDiagnostics = await buildRuleDiagnostics(
       pricelist.customer_name,
       transactions,
-      pricelist.template_structure
+      pricelist.template_structure,
+      matches,
+      unmatched
     );
 
     // Aggregate quantities
@@ -453,7 +472,9 @@ router.post('/preview', async (req, res) => {
     const ruleDiagnostics = await buildRuleDiagnostics(
       pricelist.customer_name,
       transactions,
-      pricelist.template_structure
+      pricelist.template_structure,
+      matches,
+      unmatched
     );
 
     res.json({

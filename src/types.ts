@@ -80,6 +80,26 @@ export interface ActiveRuleSummary {
   stepCount: number;
 }
 
+export interface MatchDiagnostic {
+  normalizedTransactionKey: string;
+  normalizedLineItemKeys: string[];
+  candidatesConsidered: number;
+  scoreBreakdown?: {
+    segment?: number;
+    clause?: number;
+    category?: number;
+    unitOfMeasure?: number;
+    description?: number;
+    total: number;
+  };
+  matchType: 'exact' | 'fuzzy' | 'ambiguous' | 'unmatched';
+  matchReason: string;
+  alternatives?: Array<{
+    lineItem: Partial<LineItem> & { sheet?: string };
+    score: number;
+  }>;
+}
+
 export interface RuleDiagnostic {
   transactionId: string;
   success: boolean;
@@ -89,6 +109,11 @@ export interface RuleDiagnostic {
   matchedCount: number;
   unmatchedCount: number;
   matchedLineItem?: Partial<LineItem> & { sheet?: string } | null;
+  matcherDiagnostic?: MatchDiagnostic;
+  dataMapperMatch?: {
+    confidence: number;
+    matchReason: string;
+  };
 }
 
 export interface PreviewResponse {
