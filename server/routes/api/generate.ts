@@ -477,6 +477,44 @@ router.post('/preview', async (req, res) => {
       unmatched
     );
 
+    // Count review-required matches
+    const reviewRequired = matches.filter((m: any) => m.needsReview).length;
+    const reviewQueue = matches
+      .filter((m: any) => m.needsReview && m.alternatives)
+      .map((m: any) => ({
+        transaction: {
+          id: m.transaction.id,
+          date: m.transaction.date,
+          segment: m.transaction.segment,
+          movementType: m.transaction.movementType,
+          category: m.transaction.category,
+          description: m.transaction.description,
+          quantity: m.transaction.quantity
+        },
+        currentMatch: {
+          sheet: m.sheetName,
+          row: m.lineItem.row,
+          segment: m.lineItem.segment,
+          clause: m.lineItem.clause,
+          category: m.lineItem.category,
+          remark: m.lineItem.remark,
+          rate: m.lineItem.rate
+        },
+        alternatives: m.alternatives.map((alt: any) => ({
+          lineItem: {
+            sheet: alt.sheetName,
+            row: alt.lineItem.row,
+            segment: alt.lineItem.segment,
+            clause: alt.lineItem.clause,
+            category: alt.lineItem.category,
+            remark: alt.lineItem.remark,
+            rate: alt.lineItem.rate
+          },
+          score: alt.score
+        })),
+        reason: m.reviewReason || m.matchReason
+      }));
+
     res.json({
       pricelist: {
         id: pricelist.id,
@@ -490,7 +528,8 @@ router.post('/preview', async (req, res) => {
       summary: {
         totalTransactions: transactions.length,
         matched: matches.length,
-        unmatched: unmatched.length
+        unmatched: unmatched.length,
+        reviewRequired
       },
       activeRule: ruleDiagnostics.activeRule,
       ruleDiagnostics: ruleDiagnostics.diagnostics,
@@ -525,7 +564,10 @@ router.post('/preview', async (req, res) => {
           rate: m.lineItem.rate
         },
         confidence: m.confidence,
-        reason: m.matchReason
+        reason: m.matchReason,
+        needsReview: m.needsReview,
+        reviewReason: m.reviewReason,
+        alternatives: m.alternatives
       })),
       unmatched: unmatched.map((u: any) => ({
         transaction: {
@@ -537,8 +579,10 @@ router.post('/preview', async (req, res) => {
           description: u.transaction.description,
           quantity: u.transaction.quantity
         },
-        reason: u.reason
-      }))
+        reason: u.reason,
+        needsReview: u.needsReview
+      })),
+      reviewQueue: reviewQueue.length > 0 ? reviewQueue : undefined
     });
 
   } catch (error) {

@@ -635,9 +635,9 @@ export function UserDashboard() {
                     <div className="ml-2 text-xs text-amber-700">
                       Order: {u.transaction.orderNumber} | QTY: {u.transaction.quantity} | {u.reason}
                     </div>
-                    {u.possibleMatches && u.possibleMatches.length > 0 && (
+                    {u.alternatives && u.alternatives.length > 0 && (
                       <div className="ml-2 mt-1 text-xs text-amber-700">
-                        Possible matches: {u.possibleMatches.length} line items
+                        Possible matches: {u.alternatives.length} alternatives
                       </div>
                     )}
                   </div>

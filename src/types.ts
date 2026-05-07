@@ -63,12 +63,21 @@ export interface MatchResult {
   sheetName: string;
   confidence: number;
   matchReason: string;
+  needsReview?: boolean;
+  reviewReason?: string;
+  alternatives?: Array<{
+    lineItem: LineItem;
+    sheetName: string;
+    score: number;
+  }>;
 }
 
 export interface UnmatchedItem {
   transaction: Transaction;
   reason: string;
   possibleMatches?: LineItem[];
+  needsReview?: boolean;
+  reviewReason?: string;
 }
 
 export interface ActiveRuleSummary {
@@ -130,6 +139,7 @@ export interface PreviewResponse {
     totalTransactions: number;
     matched: number;
     unmatched: number;
+    reviewRequired?: number;
   };
   activeRule?: ActiveRuleSummary | null;
   ruleDiagnostics?: RuleDiagnostic[];
@@ -139,8 +149,31 @@ export interface PreviewResponse {
     lineItem: LineItem & { sheet: string };
     confidence: number;
     reason: string;
+    needsReview?: boolean;
+    reviewReason?: string;
+    alternatives?: Array<{
+      lineItem: Partial<LineItem>;
+      score: number;
+    }>;
   }>;
-  unmatched: UnmatchedItem[];
+  unmatched: Array<{
+    transaction: Transaction;
+    reason: string;
+    needsReview?: boolean;
+    alternatives?: Array<{
+      lineItem: Partial<LineItem>;
+      score: number;
+    }>;
+  }>;
+  reviewQueue?: Array<{
+    transaction: Transaction;
+    currentMatch: LineItem & { sheet: string };
+    alternatives: Array<{
+      lineItem: LineItem & { sheet: string };
+      score: number;
+    }>;
+    reason: string;
+  }>;
 }
 
 export interface GenerateResponse {

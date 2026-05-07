@@ -81,16 +81,40 @@ export class DataMapper {
             matchReason: `Fuzzy match (score: ${(fuzzyMatches[0].score * 100).toFixed(0)}%)`
           });
         } else {
-          fuzzyCount++;
-          // Multiple close matches - pick the best one and note alternatives
+          // Multiple fuzzy matches - check if they're close
           const best = fuzzyMatches[0];
-          matches.push({
-            lineItem: best.item,
-            transaction,
-            sheetName: best.sheetName,
-            confidence: best.score,
-            matchReason: `Best fuzzy match (score: ${(best.score * 100).toFixed(0)}%), alternatives available`
-          });
+          const second = fuzzyMatches[1];
+          const scoreDifference = best.score - second.score;
+          const REVIEW_THRESHOLD = 0.1; // If top 2 differ by < 10%, flag for review
+          
+          if (scoreDifference < REVIEW_THRESHOLD) {
+            // Close scores - flag for review instead of auto-picking
+            fuzzyCount++;
+            matches.push({
+              lineItem: best.item,
+              transaction,
+              sheetName: best.sheetName,
+              confidence: best.score,
+              matchReason: `Best fuzzy match (score: ${(best.score * 100).toFixed(0)}%), close alternatives available`,
+              needsReview: true,
+              reviewReason: `Multiple close fuzzy matches (top 2 scores differ by ${(scoreDifference * 100).toFixed(1)}%) - manual review recommended`,
+              alternatives: fuzzyMatches.slice(0, 3).map(m => ({
+                lineItem: m.item,
+                sheetName: m.sheetName,
+                score: m.score
+              }))
+            });
+          } else {
+            // Clear winner - use it
+            fuzzyCount++;
+            matches.push({
+              lineItem: best.item,
+              transaction,
+              sheetName: best.sheetName,
+              confidence: best.score,
+              matchReason: `Best fuzzy match (score: ${(best.score * 100).toFixed(0)}%), alternatives available`
+            });
+          }
         }
       } else if (candidates.length === 1) {
         matchCount++;
