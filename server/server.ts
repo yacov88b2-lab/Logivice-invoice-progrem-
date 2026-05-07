@@ -3,7 +3,6 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { execSync } from 'child_process';
-import { initDatabase } from './db';
 import pricelistsRouter from './routes/pricelists';
 import generateRouter from './routes/api/generate';
 import tableauRouter from './routes/tableau';
@@ -38,9 +37,6 @@ app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   next();
 });
-
-// Initialize database
-initDatabase();
 
 // Root route
 app.get('/', (req, res) => {

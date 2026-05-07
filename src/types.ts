@@ -71,6 +71,26 @@ export interface UnmatchedItem {
   possibleMatches?: LineItem[];
 }
 
+export interface ActiveRuleSummary {
+  id: string;
+  name: string;
+  version: number;
+  ruleType: string;
+  enabled: boolean;
+  stepCount: number;
+}
+
+export interface RuleDiagnostic {
+  transactionId: string;
+  success: boolean;
+  executedSteps: string[];
+  errors: string[];
+  warnings: string[];
+  matchedCount: number;
+  unmatchedCount: number;
+  matchedLineItem?: Partial<LineItem> & { sheet?: string } | null;
+}
+
 export interface PreviewResponse {
   pricelist: {
     id: number;
@@ -86,6 +106,8 @@ export interface PreviewResponse {
     matched: number;
     unmatched: number;
   };
+  activeRule?: ActiveRuleSummary | null;
+  ruleDiagnostics?: RuleDiagnostic[];
   transactions: Transaction[];
   matches: Array<{
     transaction: Transaction;
@@ -105,6 +127,8 @@ export interface GenerateResponse {
     warehouse: string;
   };
   suggestedFilename?: string;
+  activeRule?: ActiveRuleSummary | null;
+  ruleDiagnostics?: RuleDiagnostic[];
   summary: {
     totalTransactions: number;
     matched: number;

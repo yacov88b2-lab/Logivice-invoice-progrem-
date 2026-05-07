@@ -126,8 +126,8 @@ export class DataMapper {
     return `${this.normalize(segment)}|${this.normalize(clause)}|${this.normalize(category)}|${this.normalize(uom)}|${this.normalize(remark)}`;
   }
 
-  private static normalize(str: string): string {
-    let s = str.toLowerCase().trim().replace(/\s+/g, ' ');
+  private static normalize(str: unknown): string {
+    let s = String(str ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
     // Treat 'general' and 'regular' as synonyms (different customers use different terms)
     if (s === 'general' || s === 'regular') s = 'general';
     return s;

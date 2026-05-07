@@ -212,6 +212,16 @@ export class RuleEngine {
     const warnings: string[] = [];
     const data: Record<string, any> = {};
 
+    if (!sourceKey) {
+      errors.push('sourceKey is required for field_transform');
+      return { data, errors, warnings };
+    }
+
+    if (!targetKey) {
+      errors.push('targetKey is required for field_transform');
+      return { data, errors, warnings };
+    }
+
     const sourceValue = context.previousResults?.[sourceKey];
     if (sourceValue === undefined) {
       errors.push(`Source key ${sourceKey} not found in context`);
@@ -232,6 +242,10 @@ export class RuleEngine {
         break;
       case 'replace':
         const { pattern, replacement } = step.config;
+        if (!pattern) {
+          errors.push('pattern is required for replace operation');
+          return { data, errors, warnings };
+        }
         result = String(result).replace(new RegExp(pattern, 'g'), replacement);
         break;
       case 'substring':
@@ -254,6 +268,11 @@ export class RuleEngine {
     const errors: string[] = [];
     const warnings: string[] = [];
     const data: Record<string, any> = { matches: [], unmatched: [] };
+
+    if (!Array.isArray(matchFields) || matchFields.length === 0) {
+      errors.push('matchFields must contain at least one field');
+      return { data, errors, warnings };
+    }
 
     if (!context.transaction || !context.lineItems) {
       errors.push('Transaction or line items not available');
@@ -282,9 +301,11 @@ export class RuleEngine {
 
     if (matches.length === 1) {
       data.matches = [{ item: matches[0], confidence: 1.0, reason: 'Exact match' }];
+      data.matchedLineItem = matches[0];
     } else if (matches.length > 1) {
       if (conflictResolution === 'first_match') {
         data.matches = [{ item: matches[0], confidence: 1.0, reason: 'First of multiple exact matches' }];
+        data.matchedLineItem = matches[0];
         warnings.push(`Multiple exact matches found, using first match`);
       } else {
         data.unmatched = [{ reason: 'Multiple exact matches (ambiguous)' }];
@@ -304,6 +325,11 @@ export class RuleEngine {
     const errors: string[] = [];
     const warnings: string[] = [];
     const data: Record<string, any> = { matches: [], unmatched: [] };
+
+    if (!Array.isArray(matchFields) || matchFields.length === 0) {
+      errors.push('matchFields must contain at least one field');
+      return { data, errors, warnings };
+    }
 
     if (!context.transaction || !context.lineItems) {
       errors.push('Transaction or line items not available');
@@ -364,12 +390,25 @@ export class RuleEngine {
     const warnings: string[] = [];
     const data: Record<string, any> = {};
 
-    if (!context.transaction) {
-      errors.push('No transaction data');
+    if (!field) {
+      errors.push('field is required for filter');
       return { data, errors, warnings };
     }
 
-    const fieldValue = this.getFieldValue(context.transaction, field);
+    if (!operator) {
+      errors.push('operator is required for filter');
+      return { data, errors, warnings };
+    }
+
+    const fieldValue = this.getFieldValue(context.previousResults, field) ??
+      this.getFieldValue(context.transaction, field) ??
+      this.getFieldValue(context.customData, field);
+
+    if (fieldValue === undefined) {
+      errors.push(`Field '${field}' not found for filter`);
+      return { data, errors, warnings };
+    }
+
     let passes = false;
 
     switch (operator) {
@@ -412,6 +451,16 @@ export class RuleEngine {
     const warnings: string[] = [];
     const data: Record<string, any> = {};
 
+    if (!sourceKey) {
+      errors.push('sourceKey is required for aggregate');
+      return { data, errors, warnings };
+    }
+
+    if (!outputKey) {
+      errors.push('outputKey is required for aggregate');
+      return { data, errors, warnings };
+    }
+
     if (!context.previousResults) {
       errors.push('No previous results to aggregate');
       return { data, errors, warnings };
@@ -439,6 +488,9 @@ export class RuleEngine {
       result = Math.min(...sourceData.map((v: any) => Number(v) || 0));
     } else if (operation === 'max') {
       result = Math.max(...sourceData.map((v: any) => Number(v) || 0));
+    } else {
+      errors.push(`Unknown aggregate operation: ${operation}`);
+      return { data, errors, warnings };
     }
 
     data[outputKey] = result;

@@ -138,15 +138,30 @@ export function initDatabase() {
   // Rule test runs (for preview/validation)
   db.exec(`
     CREATE TABLE IF NOT EXISTS rule_test_runs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       rule_id TEXT NOT NULL,
       test_data TEXT NOT NULL,
-      result TEXT NOT NULL,
+      result TEXT,
+      result_data TEXT,
+      status TEXT CHECK(status IN ('passed', 'failed', 'error')),
       passed INTEGER DEFAULT 0,
+      created_by TEXT DEFAULT 'system',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (rule_id) REFERENCES customer_rules(id)
+      FOREIGN KEY (rule_id) REFERENCES customer_rules(id) ON DELETE CASCADE
     )
   `);
+
+  const ruleTestColumns = db.prepare('PRAGMA table_info(rule_test_runs)').all() as { name: string }[];
+  const hasRuleTestColumn = (name: string) => ruleTestColumns.some(column => column.name === name);
+  if (!hasRuleTestColumn('result_data')) {
+    db.exec('ALTER TABLE rule_test_runs ADD COLUMN result_data TEXT');
+  }
+  if (!hasRuleTestColumn('status')) {
+    db.exec("ALTER TABLE rule_test_runs ADD COLUMN status TEXT CHECK(status IN ('passed', 'failed', 'error'))");
+  }
+  if (!hasRuleTestColumn('created_by')) {
+    db.exec("ALTER TABLE rule_test_runs ADD COLUMN created_by TEXT DEFAULT 'system'");
+  }
 
   // Rule audit trail
   db.exec(`
@@ -158,7 +173,7 @@ export function initDatabase() {
       new_value TEXT,
       changed_by TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (rule_id) REFERENCES customer_rules(id)
+      FOREIGN KEY (rule_id) REFERENCES customer_rules(id) ON DELETE CASCADE
     )
   `);
 
@@ -178,5 +193,7 @@ export function initDatabase() {
 
   console.log('Database initialized successfully');
 }
+
+initDatabase();
 
 export default db;

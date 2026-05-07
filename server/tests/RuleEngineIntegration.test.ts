@@ -24,8 +24,13 @@ describe('RuleEngine Integration Tests', () => {
 
   afterEach(() => {
     // Clean up test data
-    db.prepare('DELETE FROM customer_rules WHERE customer_id = ?').run(testCustomerId);
     db.prepare('DELETE FROM rule_test_runs WHERE created_by = ?').run('integration_test');
+    const testRuleIds = db.prepare('SELECT id FROM customer_rules WHERE customer_id = ?').all(testCustomerId) as { id: string }[];
+    for (const { id } of testRuleIds) {
+      db.prepare('DELETE FROM rule_audit_log WHERE rule_id = ?').run(id);
+      db.prepare('DELETE FROM rule_test_runs WHERE rule_id = ?').run(id);
+    }
+    db.prepare('DELETE FROM customer_rules WHERE customer_id = ?').run(testCustomerId);
   });
 
   describe('Full Pipeline: Create → Load → Execute → Audit', () => {
@@ -289,6 +294,10 @@ describe('RuleEngine Integration Tests', () => {
       expect(customer2Rules[0].customer_id).toBe(customerId2);
 
       // Clean up
+      for (const id of [saved1.id, saved2.id]) {
+        db.prepare('DELETE FROM rule_audit_log WHERE rule_id = ?').run(id);
+        db.prepare('DELETE FROM rule_test_runs WHERE rule_id = ?').run(id);
+      }
       db.prepare('DELETE FROM customer_rules WHERE customer_id IN (?, ?)').run(customerId1, customerId2);
     });
 
@@ -384,7 +393,7 @@ describe('RuleEngine Integration Tests', () => {
       const result = await RuleEngine.evaluateRule(saved, testData as any);
 
       expect(result.success).toBe(true);
-      expect(result.executedSteps).toBe(5);
+      expect(result.executedSteps).toHaveLength(5);
       expect(result.data.segment_upper).toBe('INBOUND');
       expect(result.data.passFilter).toBe(true); // Last filter passed
       expect(result.data.matchedLineItem).toBeDefined();

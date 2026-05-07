@@ -98,6 +98,16 @@ export function UserDashboard() {
     [selectedCustomer, selectedWarehouse, selectedPricelist, startDate, endDate]
   );
 
+  const previewRuleIssues = useMemo(
+    () => preview?.ruleDiagnostics?.filter(d => !d.success || d.errors.length > 0 || d.warnings.length > 0).length || 0,
+    [preview]
+  );
+
+  const resultRuleIssues = useMemo(
+    () => result?.ruleDiagnostics?.filter(d => !d.success || d.errors.length > 0 || d.warnings.length > 0).length || 0,
+    [result]
+  );
+
   // Auto-select pricelist when only one option exists
   useEffect(() => {
     if (filteredPricelists.length === 1 && !selectedPricelist) {
@@ -569,6 +579,23 @@ export function UserDashboard() {
             </div>
           </div>
 
+          <div className={`rounded border p-4 text-sm ${
+            preview.activeRule
+              ? 'border-[#28258b]/20 bg-[#28258b]/10 text-[#28258b]'
+              : 'border-amber-200 bg-amber-50 text-amber-800'
+          }`}>
+            <div className="font-semibold">
+              {preview.activeRule
+                ? `Active rule: ${preview.activeRule.name} v${preview.activeRule.version}`
+                : 'No active database rule for this customer'}
+            </div>
+            <div className="mt-1">
+              {preview.activeRule
+                ? `${preview.activeRule.stepCount} steps tested against ${preview.ruleDiagnostics?.length || 0} transactions. ${previewRuleIssues} need rule review.`
+                : 'Preview is using the legacy mapper only. QA can create and enable a draft rule from Rule Control.'}
+            </div>
+          </div>
+
           {preview.summary.totalTransactions === 0 && (
             <div className="rounded border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
               No transactions were found for this date range. Please confirm the selected customer, warehouse, and dates.
@@ -690,6 +717,23 @@ export function UserDashboard() {
                 {result.summary.filledRows}
               </div>
               <div className="text-sm text-[#28258b]">Rows Filled</div>
+            </div>
+          </div>
+
+          <div className={`rounded border p-4 text-sm ${
+            result.activeRule
+              ? 'border-[#28258b]/20 bg-[#28258b]/10 text-[#28258b]'
+              : 'border-amber-200 bg-amber-50 text-amber-800'
+          }`}>
+            <div className="font-semibold">
+              {result.activeRule
+                ? `Rule diagnostics: ${result.activeRule.name} v${result.activeRule.version}`
+                : 'Generated with no active database rule diagnostics'}
+            </div>
+            <div className="mt-1">
+              {result.activeRule
+                ? `${result.ruleDiagnostics?.length || 0} transactions checked. ${resultRuleIssues} need QA review.`
+                : 'Invoice generation still used the legacy mapper/customer handler path.'}
             </div>
           </div>
 

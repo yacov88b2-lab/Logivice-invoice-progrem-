@@ -5,6 +5,8 @@ export class CustomerRuleModel {
   static create(rule: Omit<CustomerRuleDefinition, 'id' | 'created_at' | 'updated_at'>): CustomerRuleDefinition {
     const id = `rule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const now = new Date().toISOString();
+    const createdBy = rule.created_by || 'system';
+    const updatedBy = rule.updated_by || createdBy;
 
     const stmt = db.prepare(`
       INSERT INTO customer_rules (
@@ -23,10 +25,15 @@ export class CustomerRuleModel {
       rule.ruleType,
       JSON.stringify(rule.steps),
       now,
-      rule.created_by,
+      createdBy,
       now,
-      rule.updated_by
+      updatedBy
     );
+
+    db.prepare(`
+      INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
+      VALUES (?, 'created', ?, ?)
+    `).run(id, JSON.stringify(rule.steps), createdBy);
 
     return this.getById(id)!;
   }
@@ -40,7 +47,7 @@ export class CustomerRuleModel {
   }
 
   static getByCustomer(customerId: string): CustomerRuleDefinition[] {
-    const stmt = db.prepare('SELECT * FROM customer_rules WHERE customer_id = ? ORDER BY version DESC, created_at DESC');
+    const stmt = db.prepare('SELECT * FROM customer_rules WHERE customer_id = ? ORDER BY version ASC, created_at ASC');
     const rows = stmt.all(customerId) as any[];
     return rows.map(r => this.rowToRule(r));
   }
@@ -109,7 +116,28 @@ export class CustomerRuleModel {
     const stmt = db.prepare(`UPDATE customer_rules SET ${updateFields.join(', ')} WHERE id = ?`);
     stmt.run(...values);
 
-    return this.getById(id);
+    const updated = this.getById(id);
+    const changedBy = updates.updated_by || existing.updated_by || 'system';
+
+    if (updates.enabled !== undefined && updates.enabled !== existing.enabled) {
+      db.prepare(`
+        INSERT INTO rule_audit_log (rule_id, action, old_value, new_value, changed_by)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(id, updates.enabled ? 'enabled' : 'disabled', String(existing.enabled), String(updates.enabled), changedBy);
+    } else if (
+      updates.name !== undefined ||
+      updates.description !== undefined ||
+      updates.version !== undefined ||
+      updates.steps !== undefined ||
+      updates.ruleType !== undefined
+    ) {
+      db.prepare(`
+        INSERT INTO rule_audit_log (rule_id, action, old_value, new_value, changed_by)
+        VALUES (?, 'updated', ?, ?, ?)
+      `).run(id, JSON.stringify(existing), JSON.stringify(updated), changedBy);
+    }
+
+    return updated;
   }
 
   static delete(id: string): boolean {

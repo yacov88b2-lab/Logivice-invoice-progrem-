@@ -9,8 +9,73 @@ import { ExcelDataExtractor } from '../../services/excelDataExtractor';
 import { DataMapper } from '../../services/dataMapper';
 import { fillInvoice, extractAfimilkStoragePeriod } from '../../rules/index';
 import { pricelistStorage } from '../../services/pricelistStorage';
+import { CustomerRuleModel } from '../../models/CustomerRule';
+import { RuleEngine } from '../../services/RuleEngine';
 
 const router = express.Router();
+
+function getInvoiceLineItems(templateStructure: any) {
+  const lineItems: any[] = [];
+  for (const sheet of templateStructure?.sheets || []) {
+    if (sheet?.type !== 'invoice') continue;
+    for (const item of sheet.lineItems || []) {
+      lineItems.push({ ...item, sheetName: sheet.name });
+    }
+  }
+  return lineItems;
+}
+
+async function buildRuleDiagnostics(customerName: string, transactions: any[], templateStructure: any) {
+  const activeRule = CustomerRuleModel.getActiveByCustomer(customerName);
+  if (!activeRule) {
+    return {
+      activeRule: null,
+      diagnostics: []
+    };
+  }
+
+  const lineItems = getInvoiceLineItems(templateStructure);
+  const diagnostics = await Promise.all(transactions.map(async transaction => {
+    const result = await RuleEngine.evaluateRule(activeRule, {
+      transaction,
+      lineItems,
+      templateStructure,
+      previousResults: {}
+    });
+
+    return {
+      transactionId: transaction.id,
+      success: result.success,
+      executedSteps: result.executedSteps,
+      errors: result.errors,
+      warnings: result.warnings,
+      matchedCount: Array.isArray(result.data.matches) ? result.data.matches.length : 0,
+      unmatchedCount: Array.isArray(result.data.unmatched) ? result.data.unmatched.length : 0,
+      matchedLineItem: result.data.matchedLineItem
+        ? {
+            sheet: result.data.matchedLineItem.sheetName,
+            row: result.data.matchedLineItem.row,
+            segment: result.data.matchedLineItem.segment,
+            clause: result.data.matchedLineItem.clause,
+            category: result.data.matchedLineItem.category,
+            remark: result.data.matchedLineItem.remark
+          }
+        : null
+    };
+  }));
+
+  return {
+    activeRule: {
+      id: activeRule.id,
+      name: activeRule.name,
+      version: activeRule.version,
+      ruleType: activeRule.ruleType,
+      enabled: activeRule.enabled,
+      stepCount: activeRule.steps.length
+    },
+    diagnostics
+  };
+}
 
 // Export matched/unmatched + raw Tableau sheets as a single Excel file
 router.post('/export-total', async (req, res) => {
@@ -212,6 +277,11 @@ router.post('/invoice', async (req, res) => {
       pricelist.template_structure,
       pricelistBuffer
     );
+    const ruleDiagnostics = await buildRuleDiagnostics(
+      pricelist.customer_name,
+      transactions,
+      pricelist.template_structure
+    );
 
     // Aggregate quantities
     const aggregated = DataMapper.aggregateQuantities(matches);
@@ -273,7 +343,9 @@ router.post('/invoice', async (req, res) => {
       api_data_summary: JSON.stringify({
         totalTransactions: transactions.length,
         matchedTransactions: matches.length,
-        unmatchedTransactions: unmatched.length
+        unmatchedTransactions: unmatched.length,
+        activeRuleId: ruleDiagnostics.activeRule?.id ?? null,
+        activeRuleVersion: ruleDiagnostics.activeRule?.version ?? null
       }),
       filled_rows: JSON.stringify(fillResult.filledRows),
       unmatched_rows: JSON.stringify(unmatched),
@@ -289,6 +361,8 @@ router.post('/invoice', async (req, res) => {
         warehouse: pricelist.warehouse_code
       },
       suggestedFilename: fillResult.suggestedFilename,
+      activeRule: ruleDiagnostics.activeRule,
+      ruleDiagnostics: ruleDiagnostics.diagnostics,
       summary: {
         totalTransactions: transactions.length,
         matched: matches.length,
@@ -376,6 +450,11 @@ router.post('/preview', async (req, res) => {
       pricelist.template_structure,
       pricelistBuffer
     );
+    const ruleDiagnostics = await buildRuleDiagnostics(
+      pricelist.customer_name,
+      transactions,
+      pricelist.template_structure
+    );
 
     res.json({
       pricelist: {
@@ -392,6 +471,8 @@ router.post('/preview', async (req, res) => {
         matched: matches.length,
         unmatched: unmatched.length
       },
+      activeRule: ruleDiagnostics.activeRule,
+      ruleDiagnostics: ruleDiagnostics.diagnostics,
       transactions: transactions.map((t: any) => ({
         id: t.id,
         date: t.date,
