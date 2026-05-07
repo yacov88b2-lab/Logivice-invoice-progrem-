@@ -6,7 +6,7 @@ import { toast } from '../../toast';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type WizardStep = 'name' | 'intent' | 'configure' | 'review';
-type RuleIntent = 'match' | 'filter' | 'transform' | 'combine';
+type RuleIntent = 'match' | 'filter' | 'transform' | 'combine' | 'other';
 
 interface WizardState {
   ruleName: string;
@@ -303,6 +303,12 @@ const INTENTS: { id: RuleIntent; icon: string; title: string; desc: string }[] =
     title: 'Combine rows',
     desc: 'Add up or group multiple transaction rows together',
   },
+  {
+    id: 'other',
+    icon: '📋',
+    title: 'Other / Custom',
+    desc: 'Name the rule and add steps manually — useful for one-off or copy-pasted Tableau rules',
+  },
 ];
 
 function IntentStep({
@@ -357,6 +363,7 @@ function ConfigureStep({
       {state.intent === 'filter'    && <FilterConfig    state={state} update={update} />}
       {state.intent === 'transform' && <TransformConfig state={state} update={update} />}
       {state.intent === 'combine'   && <CombineConfig   state={state} update={update} />}
+      {state.intent === 'other'     && <OtherConfig />}
     </div>
   );
 }
@@ -759,6 +766,18 @@ function CombineConfig({
   );
 }
 
+// ─── Other Config ─────────────────────────────────────────────────────────────
+
+function OtherConfig() {
+  return (
+    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600 space-y-2">
+      <p className="font-semibold text-slate-800">Custom / manual rule</p>
+      <p>This rule will be saved as a draft with no steps. After saving, open it in the full Rule Builder to add steps manually — for example, when copying logic from a Tableau report.</p>
+      <p className="text-xs text-slate-400">Any notes you added in step 1 will be saved with the rule for reference.</p>
+    </div>
+  );
+}
+
 // ─── Step: Review ─────────────────────────────────────────────────────────────
 
 function ReviewStep({
@@ -869,6 +888,11 @@ function describeRule(state: WizardState, customerId: string): string {
     case 'combine':
       return `For ${customerId}: groups transactions by "${combineFieldLabel}" and ${combineLabel(state.combineOperation)}.`;
 
+    case 'other':
+      return state.notes
+        ? `For ${customerId}: custom rule — ${state.notes}`
+        : `For ${customerId}: custom rule — steps to be defined manually in the Rule Builder.`;
+
     default:
       return 'No purpose selected.';
   }
@@ -897,6 +921,7 @@ function isConfigValid(state: WizardState): boolean {
     case 'filter':    return state.filterField.trim().length > 0 && state.filterValue.trim().length > 0;
     case 'transform': return state.transformField.trim().length > 0;
     case 'combine':   return state.combineField.trim().length > 0;
+    case 'other':     return true;
     default:          return false;
   }
 }
@@ -964,6 +989,11 @@ function wizardToRule(
         config: { groupBy: state.combineField, operation: state.combineOperation },
       }];
       break;
+
+    case 'other':
+      ruleType = 'matching';
+      steps = [];
+      break;
   }
 
   const description = [
@@ -999,7 +1029,10 @@ function ruleToWizard(rule: CustomerRuleDefinition): WizardState {
 
   const s0 = rule.steps[0];
   const s1 = rule.steps[1];
-  if (!s0) return base;
+  if (!s0) {
+    base.intent = 'other';
+    return base;
+  }
 
   if (s0.type === 'field_extraction' && s1) {
     const f = s0.config.fieldName ?? '';
@@ -1028,6 +1061,8 @@ function ruleToWizard(rule: CustomerRuleDefinition): WizardState {
     base.intent = 'combine';
     base.combineField = s0.config.groupBy ?? '';
     base.combineOperation = s0.config.operation ?? 'sum';
+  } else {
+    base.intent = 'other';
   }
 
   return base;
