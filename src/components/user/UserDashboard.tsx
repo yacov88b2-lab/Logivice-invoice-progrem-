@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '../../api';
-import type { Pricelist, PreviewResponse, GenerateResponse } from '../../types';
+import type { Pricelist, PreviewResponse, GenerateResponse, RuleDiagnostic } from '../../types';
 
 export function UserDashboard() {
   const [pricelists, setPricelists] = useState<Pricelist[]>([]);
@@ -105,6 +105,16 @@ export function UserDashboard() {
 
   const resultRuleIssues = useMemo(
     () => result?.ruleDiagnostics?.filter(d => !d.success || d.errors.length > 0 || d.warnings.length > 0).length || 0,
+    [result]
+  );
+
+  const previewDiagnosticsForReview = useMemo(
+    () => preview?.ruleDiagnostics?.filter(d => !d.success || d.errors.length > 0 || d.warnings.length > 0).slice(0, 8) || [],
+    [preview]
+  );
+
+  const resultDiagnosticsForReview = useMemo(
+    () => result?.ruleDiagnostics?.filter(d => !d.success || d.errors.length > 0 || d.warnings.length > 0).slice(0, 8) || [],
     [result]
   );
 
@@ -596,6 +606,14 @@ export function UserDashboard() {
             </div>
           </div>
 
+          {preview.activeRule && (
+            <RuleDiagnosticsPanel
+              diagnostics={previewDiagnosticsForReview}
+              totalIssues={previewRuleIssues}
+              emptyMessage="No rule execution issues found in preview diagnostics."
+            />
+          )}
+
           {preview.summary.totalTransactions === 0 && (
             <div className="rounded border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
               No transactions were found for this date range. Please confirm the selected customer, warehouse, and dates.
@@ -737,6 +755,14 @@ export function UserDashboard() {
             </div>
           </div>
 
+          {result.activeRule && (
+            <RuleDiagnosticsPanel
+              diagnostics={resultDiagnosticsForReview}
+              totalIssues={resultRuleIssues}
+              emptyMessage="No rule execution issues found in generation diagnostics."
+            />
+          )}
+
           {result.filledRows.length > 0 && (
             <div className="overflow-x-auto">
               <h4 className="mb-2 font-semibold text-slate-950">Filled Rows</h4>
@@ -815,5 +841,76 @@ export function UserDashboard() {
         </div>
       )}
     </div>
+  );
+}
+
+function RuleDiagnosticsPanel({
+  diagnostics,
+  totalIssues,
+  emptyMessage,
+}: {
+  diagnostics: RuleDiagnostic[];
+  totalIssues: number;
+  emptyMessage: string;
+}) {
+  return (
+    <section className="rounded border border-slate-200 bg-white p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <h4 className="font-semibold text-slate-950">Rule Review Details</h4>
+        <span className="text-xs font-semibold text-slate-500">
+          {totalIssues > diagnostics.length ? `Showing ${diagnostics.length} of ${totalIssues}` : `${totalIssues} issue${totalIssues === 1 ? '' : 's'}`}
+        </span>
+      </div>
+
+      {diagnostics.length === 0 ? (
+        <div className="mt-3 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {emptyMessage}
+        </div>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-slate-100 text-slate-700">
+              <tr>
+                <th className="p-2 text-left">Transaction</th>
+                <th className="p-2 text-left">Steps</th>
+                <th className="p-2 text-left">Rule Result</th>
+                <th className="p-2 text-left">Matched Line</th>
+              </tr>
+            </thead>
+            <tbody>
+              {diagnostics.map(diagnostic => (
+                <tr key={diagnostic.transactionId} className="border-b border-slate-200 align-top last:border-0">
+                  <td className="p-2 font-mono text-xs text-slate-700">{diagnostic.transactionId || '-'}</td>
+                  <td className="p-2 text-slate-700">{diagnostic.executedSteps.length}</td>
+                  <td className="p-2">
+                    <div className={diagnostic.success ? 'font-semibold text-green-700' : 'font-semibold text-red-700'}>
+                      {diagnostic.success ? 'Passed' : 'Failed'}
+                    </div>
+                    {diagnostic.errors.length > 0 && (
+                      <div className="mt-1 text-xs text-red-700">{diagnostic.errors.join('; ')}</div>
+                    )}
+                    {diagnostic.warnings.length > 0 && (
+                      <div className="mt-1 text-xs text-amber-700">{diagnostic.warnings.join('; ')}</div>
+                    )}
+                  </td>
+                  <td className="p-2 text-xs text-slate-700">
+                    {diagnostic.matchedLineItem ? (
+                      <div>
+                        <div className="font-semibold text-slate-900">
+                          {diagnostic.matchedLineItem.sheet || 'Sheet'} row {diagnostic.matchedLineItem.row || '-'}
+                        </div>
+                        <div>{diagnostic.matchedLineItem.segment || '-'} / {diagnostic.matchedLineItem.clause || '-'}</div>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500">No rule match</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
