@@ -881,81 +881,124 @@ function ReviewQueuePanel({
   loading: boolean;
 }) {
   const resolvedCount = reviewQueue.filter(item => resolvedItems[item.transaction.id] !== undefined).length;
+  const allDone = resolvedCount === reviewQueue.length;
 
   return (
-    <section className="rounded border border-orange-200 bg-orange-50 p-4 space-y-4">
+    <section className="rounded-xl border border-orange-200 bg-orange-50 p-4 space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h4 className="font-semibold text-orange-900">
-            {reviewQueue.length} transaction{reviewQueue.length !== 1 ? 's' : ''} need manual selection
+          <h4 className="text-base font-semibold text-orange-900">
+            {reviewQueue.length} transaction{reviewQueue.length !== 1 ? 's' : ''} need your input
           </h4>
           <p className="mt-1 text-sm text-orange-800">
-            Multiple pricelist rows scored within 10% of each other. Pick the correct one for each transaction, then re-run the preview.
+            The system found multiple possible pricelist rows for each of these. Pick the correct one, then update the preview.
           </p>
         </div>
-        <span className="shrink-0 rounded bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-800">
-          {resolvedCount}/{reviewQueue.length} resolved
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
+          allDone ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+        }`}>
+          {resolvedCount}/{reviewQueue.length} done
         </span>
       </div>
 
       <div className="space-y-3">
-        {reviewQueue.map(item => (
-          <div key={item.transaction.id} className="rounded border border-orange-200 bg-white p-3">
-            <div className="text-sm font-semibold text-slate-900">
-              {item.transaction.segment} — {item.transaction.movementType}
-              {item.transaction.category && ` (${item.transaction.category})`}
-            </div>
-            <div className="mt-0.5 text-xs text-slate-500">
-              {item.transaction.description} · QTY: {item.transaction.quantity} · {item.reason}
-            </div>
-            <div className="mt-2 space-y-1.5">
-              {item.alternatives.map((alt, idx) => (
-                <label
-                  key={idx}
-                  className={`flex cursor-pointer items-start gap-2 rounded border px-3 py-2 text-xs transition-colors ${
-                    resolvedItems[item.transaction.id] === idx
-                      ? 'border-[#28258b] bg-[#28258b]/5'
-                      : 'border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name={`resolve-${item.transaction.id}`}
-                    checked={resolvedItems[item.transaction.id] === idx}
-                    onChange={() => onResolve(item.transaction.id, idx)}
-                    className="mt-0.5 shrink-0"
-                  />
-                  <span>
-                    <span className="font-semibold text-slate-800">
-                      {alt.lineItem.sheet} row {alt.lineItem.row}
-                    </span>
-                    <span className="ml-2 text-slate-600">
-                      {alt.lineItem.segment} / {alt.lineItem.clause}
-                    </span>
-                    {alt.lineItem.remark && (
-                      <span className="ml-2 text-slate-400">· {alt.lineItem.remark}</span>
-                    )}
-                    <span className="ml-2 font-medium text-[#58a967]">
-                      {(alt.score * 100).toFixed(0)}% match
-                    </span>
-                    {alt.lineItem.rate != null && (
-                      <span className="ml-2 text-slate-400">· rate: {alt.lineItem.rate}</span>
-                    )}
+        {reviewQueue.map((item, itemIdx) => {
+          const txId = item.transaction.id;
+          const tx = item.transaction;
+          const isResolved = resolvedItems[txId] !== undefined;
+          const maxScore = Math.max(...item.alternatives.map(a => a.score));
+
+          const txLabel = [tx.segment, tx.movementType, tx.category].filter(Boolean).join(' · ');
+          const txSub = [
+            tx.orderNumber ? `Order ${tx.orderNumber}` : null,
+            tx.description || null,
+          ].filter(Boolean).join(' · ');
+
+          return (
+            <div
+              key={txId}
+              className={`rounded-lg border bg-white p-3 transition-colors ${
+                isResolved ? 'border-green-300' : 'border-orange-200'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-900 truncate">{txLabel}</div>
+                  {txSub && <div className="mt-0.5 text-xs text-slate-500 truncate">{txSub}</div>}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs text-slate-500">
+                    QTY <span className="font-semibold text-slate-700">{tx.quantity}</span>
                   </span>
-                </label>
-              ))}
+                  <span className="text-xs text-slate-400">#{itemIdx + 1}</span>
+                  {isResolved && (
+                    <span className="text-xs font-semibold text-green-700">✓ Done</span>
+                  )}
+                </div>
+              </div>
+
+              <p className="mb-2 text-xs font-medium text-slate-500">Which pricelist row does this belong to?</p>
+
+              <div className="space-y-1.5">
+                {item.alternatives.map((alt, idx) => {
+                  const isSelected = resolvedItems[txId] === idx;
+                  const isBest = alt.score === maxScore;
+                  const name = alt.lineItem.remark
+                    || [alt.lineItem.segment, alt.lineItem.clause].filter(Boolean).join(' / ')
+                    || `Row ${alt.lineItem.row}`;
+                  const rate = alt.lineItem.rate != null
+                    ? `$${Number(alt.lineItem.rate).toFixed(2)} / unit`
+                    : null;
+
+                  return (
+                    <label
+                      key={idx}
+                      className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                        isSelected
+                          ? 'border-[#28258b] bg-[#28258b]/5'
+                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={`resolve-${txId}`}
+                        checked={isSelected}
+                        onChange={() => onResolve(txId, idx)}
+                        className="shrink-0"
+                      />
+                      <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
+                        <span className="font-medium text-slate-800 truncate">{name}</span>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {rate && (
+                            <span className="text-sm font-semibold text-slate-700">{rate}</span>
+                          )}
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            isBest
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {isBest ? 'Best match' : 'Also matches'}
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <button
         type="button"
         onClick={onApply}
         disabled={loading || resolvedCount === 0}
-        className="w-full rounded border border-orange-300 bg-white px-4 py-2.5 text-sm font-semibold text-orange-900 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {loading ? 'Re-running preview…' : `Apply ${resolvedCount} selection${resolvedCount !== 1 ? 's' : ''} & re-run preview`}
+        {loading
+          ? 'Updating preview…'
+          : `Confirm ${resolvedCount} selection${resolvedCount !== 1 ? 's' : ''} & update preview`}
       </button>
     </section>
   );
