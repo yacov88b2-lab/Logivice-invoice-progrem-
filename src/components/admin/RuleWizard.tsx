@@ -31,6 +31,8 @@ interface WizardState {
   // Combine
   combineField: string;
   combineOperation: string;
+  // Other / AI-suggested
+  suggestedSteps: RuleStep[] | null;
 }
 
 const DEFAULT_STATE: WizardState = {
@@ -52,6 +54,7 @@ const DEFAULT_STATE: WizardState = {
   transformOperation: 'uppercase',
   combineField: '',
   combineOperation: 'sum',
+  suggestedSteps: null,
 };
 
 // Actual transaction fields from the data model
@@ -174,7 +177,7 @@ export function RuleWizard({ customerId, existingRule, onSave }: RuleWizardProps
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         {step === 'name'      && <NameStep      state={state} update={update} isListening={isListening} onToggleVoice={toggleVoice} />}
         {step === 'intent'    && <IntentStep    state={state} update={update} />}
-        {step === 'configure' && <ConfigureStep state={state} update={update} />}
+        {step === 'configure' && <ConfigureStep state={state} update={update} customerId={customerId} />}
         {step === 'review'    && <ReviewStep    state={state} update={update} customerId={customerId} />}
       </div>
 
@@ -348,10 +351,11 @@ function IntentStep({
 // ─── Step: Configure ──────────────────────────────────────────────────────────
 
 function ConfigureStep({
-  state, update,
+  state, update, customerId,
 }: {
   state: WizardState;
   update: (p: Partial<WizardState>) => void;
+  customerId: string;
 }) {
   return (
     <div className="space-y-5">
@@ -363,7 +367,7 @@ function ConfigureStep({
       {state.intent === 'filter'    && <FilterConfig    state={state} update={update} />}
       {state.intent === 'transform' && <TransformConfig state={state} update={update} />}
       {state.intent === 'combine'   && <CombineConfig   state={state} update={update} />}
-      {state.intent === 'other'     && <OtherConfig />}
+      {state.intent === 'other'     && <OtherConfig     state={state} update={update} customerId={customerId} />}
     </div>
   );
 }
@@ -768,12 +772,102 @@ function CombineConfig({
 
 // ─── Other Config ─────────────────────────────────────────────────────────────
 
-function OtherConfig() {
+function OtherConfig({
+  state, update, customerId,
+}: {
+  state: WizardState;
+  update: (p: Partial<WizardState>) => void;
+  customerId: string;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSuggest = async () => {
+    if (!state.notes.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.suggestRuleSteps(customerId, state.notes);
+      update({ suggestedSteps: result.steps as RuleStep[] });
+      toast.success('Steps suggested — review below, then save.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'AI suggestion failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hasSuggestion = state.suggestedSteps !== null && state.suggestedSteps.length > 0;
+
   return (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600 space-y-2">
-      <p className="font-semibold text-slate-800">Custom / manual rule</p>
-      <p>This rule will be saved as a draft with no steps. After saving, open it in the full Rule Builder to add steps manually — for example, when copying logic from a Tableau report.</p>
-      <p className="text-xs text-slate-400">Any notes you added in step 1 will be saved with the rule for reference.</p>
+    <div className="space-y-4">
+      {state.notes.trim() ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 space-y-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Your description</p>
+            <p className="text-slate-700">{state.notes}</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSuggest}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
+          >
+            {loading ? (
+              <>
+                <span className="animate-spin text-base">⏳</span> Thinking…
+              </>
+            ) : (
+              <>✨ Suggest steps with AI</>
+            )}
+          </button>
+          {error && (
+            <p className="text-xs text-red-600">{error}</p>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600 space-y-1">
+          <p className="font-semibold text-slate-800">No description yet</p>
+          <p>Go back to step 1 and describe what this rule should do in the Notes field. The AI will use that to suggest steps.</p>
+        </div>
+      )}
+
+      {hasSuggestion && (
+        <div className="rounded-lg border border-[#28258b]/20 bg-[#28258b]/5 p-4 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#28258b]">
+            AI suggested {state.suggestedSteps!.length} step{state.suggestedSteps!.length !== 1 ? 's' : ''}
+          </p>
+          <div className="space-y-1.5">
+            {state.suggestedSteps!.map((step, i) => (
+              <div key={step.id} className="flex items-start gap-2 text-xs text-slate-700">
+                <span className="mt-0.5 shrink-0 rounded-full bg-[#28258b] px-1.5 py-0.5 text-[10px] font-bold text-white">{i + 1}</span>
+                <span>
+                  <span className="font-semibold">{step.type}</span>
+                  {Object.keys(step.config).length > 0 && (
+                    <span className="ml-1 text-slate-400">
+                      — {Object.entries(step.config).map(([k, v]) => `${k}: ${v}`).join(', ')}
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500 pt-1">These steps will be saved with the rule. You can refine them in the Rule Builder after saving.</p>
+          <button
+            type="button"
+            onClick={() => update({ suggestedSteps: null })}
+            className="text-xs text-slate-400 underline hover:text-slate-600"
+          >
+            Clear suggestion
+          </button>
+        </div>
+      )}
+
+      {!hasSuggestion && state.notes.trim() && !loading && (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-xs text-slate-500">
+          Rule will be saved as a draft with no steps. You can add steps manually in the Rule Builder after saving.
+        </div>
+      )}
     </div>
   );
 }
@@ -889,6 +983,9 @@ function describeRule(state: WizardState, customerId: string): string {
       return `For ${customerId}: groups transactions by "${combineFieldLabel}" and ${combineLabel(state.combineOperation)}.`;
 
     case 'other':
+      if (state.suggestedSteps && state.suggestedSteps.length > 0) {
+        return `For ${customerId}: custom rule with ${state.suggestedSteps.length} AI-suggested step${state.suggestedSteps.length !== 1 ? 's' : ''}. ${state.notes ? state.notes : ''}`.trim();
+      }
       return state.notes
         ? `For ${customerId}: custom rule — ${state.notes}`
         : `For ${customerId}: custom rule — steps to be defined manually in the Rule Builder.`;
@@ -992,7 +1089,7 @@ function wizardToRule(
 
     case 'other':
       ruleType = 'matching';
-      steps = [];
+      steps = state.suggestedSteps ?? [];
       break;
   }
 
