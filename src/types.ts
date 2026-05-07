@@ -86,6 +86,7 @@ export interface ActiveRuleSummary {
   version: number;
   ruleType: string;
   enabled: boolean;
+  approval_status: 'draft' | 'tested' | 'approved';
   stepCount: number;
 }
 

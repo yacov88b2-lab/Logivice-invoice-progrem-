@@ -135,6 +135,20 @@ export function initDatabase() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_rules_enabled ON customer_rules(enabled)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_customer_rules_version ON customer_rules(version)`);
 
+  // Migration: Add approval_status column to customer_rules if not exists
+  try {
+    const customerRulesColumns = db.prepare('PRAGMA table_info(customer_rules)').all() as { name: string }[];
+    const hasApprovalStatus = customerRulesColumns.some(column => column.name === 'approval_status');
+    if (!hasApprovalStatus) {
+      db.exec(`
+        ALTER TABLE customer_rules ADD COLUMN approval_status TEXT CHECK(approval_status IN ('draft', 'tested', 'approved')) DEFAULT 'draft'
+      `);
+      console.log('[DB] Added approval_status column to customer_rules');
+    }
+  } catch (e) {
+    console.error('[DB] Migration approval_status failed:', e);
+  }
+
   // Rule test runs (for preview/validation)
   db.exec(`
     CREATE TABLE IF NOT EXISTS rule_test_runs (

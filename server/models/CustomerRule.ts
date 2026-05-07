@@ -167,6 +167,63 @@ export class CustomerRuleModel {
     });
   }
 
+  static markTested(id: string, testedBy?: string): CustomerRuleDefinition | undefined {
+    const existing = this.getById(id);
+    if (!existing) return undefined;
+
+    const updated = this.update(id, {
+      approval_status: 'tested',
+      updated_by: testedBy || 'system'
+    });
+
+    if (updated) {
+      db.prepare(`
+        INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
+        VALUES (?, 'updated', ?, ?)
+      `).run(id, 'approval_status: tested', testedBy || 'system');
+    }
+
+    return updated;
+  }
+
+  static markApproved(id: string, approvedBy?: string): CustomerRuleDefinition | undefined {
+    const existing = this.getById(id);
+    if (!existing) return undefined;
+
+    const updated = this.update(id, {
+      approval_status: 'approved',
+      updated_by: approvedBy || 'system'
+    });
+
+    if (updated) {
+      db.prepare(`
+        INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
+        VALUES (?, 'updated', ?, ?)
+      `).run(id, 'approval_status: approved', approvedBy || 'system');
+    }
+
+    return updated;
+  }
+
+  static revertToDraft(id: string, revertedBy?: string): CustomerRuleDefinition | undefined {
+    const existing = this.getById(id);
+    if (!existing) return undefined;
+
+    const updated = this.update(id, {
+      approval_status: 'draft',
+      updated_by: revertedBy || 'system'
+    });
+
+    if (updated) {
+      db.prepare(`
+        INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
+        VALUES (?, 'updated', ?, ?)
+      `).run(id, 'approval_status: draft', revertedBy || 'system');
+    }
+
+    return updated;
+  }
+
   private static rowToRule(row: any): CustomerRuleDefinition {
     return {
       id: row.id,
@@ -175,6 +232,7 @@ export class CustomerRuleModel {
       description: row.description,
       version: row.version,
       enabled: Boolean(row.enabled),
+      approval_status: row.approval_status || 'draft',
       ruleType: row.rule_type,
       steps: JSON.parse(row.steps || '[]'),
       created_at: row.created_at,

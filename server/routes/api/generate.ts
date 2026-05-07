@@ -88,6 +88,7 @@ async function buildRuleDiagnostics(
       version: activeRule.version,
       ruleType: activeRule.ruleType,
       enabled: activeRule.enabled,
+      approval_status: activeRule.approval_status,
       stepCount: activeRule.steps.length
     },
     diagnostics

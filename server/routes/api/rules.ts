@@ -204,6 +204,74 @@ router.post('/:id/test', async (req, res) => {
   }
 });
 
+// Mark rule as tested
+router.patch('/:id/mark-tested', (req, res) => {
+  try {
+    const { tested_by } = req.body;
+    const rule = CustomerRuleModel.getById(req.params.id);
+
+    if (!rule) {
+      return res.status(404).json({ error: 'Rule not found' });
+    }
+
+    const updated = CustomerRuleModel.markTested(req.params.id, tested_by || 'admin');
+    res.json(updated);
+  } catch (error) {
+    console.error('Error marking rule as tested:', error);
+    res.status(500).json({ error: 'Failed to mark rule as tested', details: (error as Error).message });
+  }
+});
+
+// Mark rule as approved (unlock for enabling)
+router.patch('/:id/approve', (req, res) => {
+  try {
+    const { approved_by } = req.body;
+    const rule = CustomerRuleModel.getById(req.params.id);
+
+    if (!rule) {
+      return res.status(404).json({ error: 'Rule not found' });
+    }
+
+    if (rule.approval_status !== 'tested') {
+      return res.status(400).json({ 
+        error: 'Rule must be marked as tested before approval',
+        current_status: rule.approval_status
+      });
+    }
+
+    const updated = CustomerRuleModel.markApproved(req.params.id, approved_by || 'admin');
+    res.json(updated);
+  } catch (error) {
+    console.error('Error approving rule:', error);
+    res.status(500).json({ error: 'Failed to approve rule', details: (error as Error).message });
+  }
+});
+
+// Revert rule to draft (for edits)
+router.patch('/:id/revert-to-draft', (req, res) => {
+  try {
+    const { reverted_by } = req.body;
+    const rule = CustomerRuleModel.getById(req.params.id);
+
+    if (!rule) {
+      return res.status(404).json({ error: 'Rule not found' });
+    }
+
+    // Cannot revert if enabled
+    if (rule.enabled) {
+      return res.status(400).json({ 
+        error: 'Cannot revert enabled rule to draft. Disable it first.'
+      });
+    }
+
+    const updated = CustomerRuleModel.revertToDraft(req.params.id, reverted_by || 'admin');
+    res.json(updated);
+  } catch (error) {
+    console.error('Error reverting rule:', error);
+    res.status(500).json({ error: 'Failed to revert rule', details: (error as Error).message });
+  }
+});
+
 // Delete rule
 router.delete('/:id', (req, res) => {
   try {
