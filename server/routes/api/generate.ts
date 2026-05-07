@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import * as XLSX from 'xlsx';
 import { PricelistModel } from '../../models/Pricelist';
-import { AuditLogModel } from '../../models/AuditLog';
+import { AuditLogModel, type MatchAuditRow } from '../../models/AuditLog';
 import { TableauAPIClient } from '../../services/tableauAPI';
 import { ExcelDataExtractor } from '../../services/excelDataExtractor';
 import { DataMapper } from '../../services/dataMapper';
@@ -259,7 +259,8 @@ router.post('/invoice', async (req, res) => {
       end_date,
       use_excel_data = true,
       user_id = 1,
-      resolvedItems
+      resolvedItems,
+      force = false
     } = req.body;
 
     if (!pricelist_id || !start_date || !end_date) {
@@ -272,6 +273,19 @@ router.post('/invoice', async (req, res) => {
     const pricelist = PricelistModel.getById(parseInt(pricelist_id));
     if (!pricelist) {
       return res.status(404).json({ error: 'Pricelist not found' });
+    }
+
+    // Duplicate period check — block re-generation of the same period unless explicitly forced
+    if (!force) {
+      const existing = AuditLogModel.findByPeriod(parseInt(pricelist_id), start_date, end_date);
+      if (existing) {
+        return res.status(409).json({
+          error: 'duplicate_period',
+          message: `An invoice for this period was already generated on ${new Date(existing.created_at!).toLocaleString()}.`,
+          existingAuditLogId: existing.id,
+          generatedAt: existing.created_at
+        });
+      }
     }
 
     // Check if file exists (SharePoint or local)
@@ -328,6 +342,14 @@ router.post('/invoice', async (req, res) => {
       transactions = result.transactions;
       rawViewData = result.rawViewData;
       filteredViewData = result.filteredViewData;
+    }
+
+    // Hard stop — never generate an invoice with zero transaction data
+    if (transactions.length === 0) {
+      return res.status(422).json({
+        error: 'no_transaction_data',
+        message: `No transactions found for ${pricelist.customer_name} / ${pricelist.warehouse_code} between ${start_date} and ${end_date}. Check the date range and confirm data is available in the pricelist file or Tableau.`
+      });
     }
 
     // Map transactions to line items
@@ -445,6 +467,24 @@ router.post('/invoice', async (req, res) => {
       output_file_path: outputPath
     });
 
+    // Persist match-level audit — one row per matched transaction for dispute traceability
+    const matchAuditRows: MatchAuditRow[] = matches.map((m: any) => ({
+      audit_log_id: auditEntry.id!,
+      transaction_id: m.transaction.id,
+      transaction_segment: m.transaction.segment,
+      transaction_movement_type: m.transaction.movementType,
+      transaction_quantity: m.transaction.quantity,
+      line_item_sheet: m.sheetName ?? m.lineItem?.sheetName,
+      line_item_row: m.lineItem?.row,
+      line_item_clause: m.lineItem?.clause,
+      match_reason: m.matchReason,
+      confidence: m.confidence,
+      matched_by: m.matchReason?.startsWith('Rule match') ? 'rule_engine'
+        : m.matchReason?.startsWith('Manually') ? 'manual_resolution'
+        : 'data_mapper',
+    }));
+    AuditLogModel.createMatchAuditBatch(matchAuditRows);
+
     res.json({
       success: fillResult.success,
       pricelist: {
@@ -539,6 +579,14 @@ router.post('/preview', async (req, res) => {
         customer: pricelist.customer_name,
         warehouse: pricelist.warehouse_code
       }));
+    }
+
+    // Hard stop — surface empty data early so users don't waste time reviewing a blank preview
+    if (transactions.length === 0) {
+      return res.status(422).json({
+        error: 'no_transaction_data',
+        message: `No transactions found for ${pricelist.customer_name} / ${pricelist.warehouse_code} between ${start_date} and ${end_date}. Check the date range and confirm data is available in the pricelist file or Tableau.`
+      });
     }
 
     // Map transactions (dry run)

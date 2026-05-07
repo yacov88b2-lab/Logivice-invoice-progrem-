@@ -17,6 +17,7 @@ export function UserDashboard() {
   const [step, setStep] = useState<'select' | 'preview' | 'result'>('select');
   const [billingCycle, setBillingCycle] = useState<'custom' | 'full_month'>('full_month');
   const [resolvedItems, setResolvedItems] = useState<Record<string, number>>({});
+  const [duplicateWarning, setDuplicateWarning] = useState<{ generatedAt: string; existingAuditLogId: number } | null>(null);
 
   const loadPricelists = async () => {
     setLoadingPricelists(true);
@@ -146,6 +147,7 @@ export function UserDashboard() {
     setStep('select');
     setError(null);
     setResolvedItems({});
+    setDuplicateWarning(null);
   }, [selectedCustomer, selectedWarehouse, selectedPricelist, billingCycle]);
 
   const handlePreview = async () => {
@@ -181,16 +183,20 @@ export function UserDashboard() {
     await executeGenerate();
   };
 
-  const executeGenerate = async () => {
+  const executeGenerate = async (force = false) => {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, 1, resolvedItems);
+      setDuplicateWarning(null);
+      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, 1, resolvedItems, force);
       setResult(data);
       setStep('result');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to generate invoice. Please try again.';
-      setError(message);
+      if (err instanceof Error && (err as any).isDuplicate) {
+        setDuplicateWarning({ generatedAt: (err as any).generatedAt, existingAuditLogId: (err as any).existingAuditLogId });
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to generate invoice. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -266,6 +272,7 @@ export function UserDashboard() {
     setResult(null);
     setError(null);
     setResolvedItems({});
+    setDuplicateWarning(null);
   };
 
   const handleBackToPreview = () => {
@@ -686,6 +693,34 @@ export function UserDashboard() {
                   <div>Inbound Orders: {preview.transactions?.filter((t) => t.segment === 'Inbound').length || 0}</div>
                   <div>Outbound Orders: {preview.transactions?.filter((t) => t.segment === 'Outbound').length || 0}</div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {duplicateWarning && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-900">
+                An invoice for this period was already generated
+              </p>
+              <p className="mt-1 text-sm text-amber-800">
+                Generated on {new Date(duplicateWarning.generatedAt).toLocaleString()}. Generating again will create a second invoice for the same period.
+              </p>
+              <div className="mt-3 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => executeGenerate(true)}
+                  disabled={loading}
+                  className="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                >
+                  Generate anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDuplicateWarning(null)}
+                  className="rounded border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           )}

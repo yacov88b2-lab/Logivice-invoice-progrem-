@@ -91,14 +91,22 @@ export const api = {
     return res.json();
   },
 
-  generateInvoice: async (pricelistId: number, startDate: string, endDate: string, userId: number = 1, resolvedItems?: Record<string, number>) => {
-    const body: Record<string, unknown> = { pricelist_id: pricelistId, start_date: startDate, end_date: endDate, user_id: userId };
+  generateInvoice: async (pricelistId: number, startDate: string, endDate: string, userId: number = 1, resolvedItems?: Record<string, number>, force = false) => {
+    const body: Record<string, unknown> = { pricelist_id: pricelistId, start_date: startDate, end_date: endDate, user_id: userId, force };
     if (resolvedItems && Object.keys(resolvedItems).length > 0) body.resolvedItems = resolvedItems;
     const res = await fetch(`${API_BASE}/generate/invoice`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (res.status === 409) {
+      const data = await res.json();
+      const err = new Error(data.message || 'Duplicate invoice period') as Error & { isDuplicate: true; generatedAt: string; existingAuditLogId: number };
+      (err as any).isDuplicate = true;
+      (err as any).generatedAt = data.generatedAt;
+      (err as any).existingAuditLogId = data.existingAuditLogId;
+      throw err;
+    }
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to generate invoice'));
     const data = await res.json();
     if (!data?.success) {

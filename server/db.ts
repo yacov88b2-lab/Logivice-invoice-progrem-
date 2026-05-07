@@ -205,6 +205,32 @@ export function initDatabase() {
     )
   `);
 
+  // Match-level audit trail — one row per matched transaction per invoice run.
+  // Allows post-hoc reconstruction of "why did transaction X go to line Y?"
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS match_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      audit_log_id INTEGER NOT NULL,
+      transaction_id TEXT NOT NULL,
+      transaction_segment TEXT,
+      transaction_movement_type TEXT,
+      transaction_quantity REAL,
+      line_item_sheet TEXT,
+      line_item_row INTEGER,
+      line_item_clause TEXT,
+      match_reason TEXT,
+      confidence REAL,
+      matched_by TEXT CHECK(matched_by IN ('data_mapper', 'rule_engine', 'manual_resolution')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (audit_log_id) REFERENCES audit_logs(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_match_audit_audit_log ON match_audit(audit_log_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_match_audit_transaction ON match_audit(transaction_id)`);
+
+  // Indexes for duplicate-period detection
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_period ON audit_logs(pricelist_id, date_range_start, date_range_end)`);
+
   console.log('Database initialized successfully');
 }
 
