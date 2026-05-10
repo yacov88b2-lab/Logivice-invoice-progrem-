@@ -14,8 +14,9 @@ import { RuleEngine } from '../../services/RuleEngine';
 
 const router = express.Router();
 
-// Run the customer's active rule as a fallback matcher on transactions DataMapper couldn't place.
-// Only touches items that had no match at all (not review-queue candidates — those need human selection).
+// Run the customer's active rule as primary matcher on all transactions DataMapper couldn't place.
+// Runs on ALL unmatched items — including review-queue candidates. Items the rule matches are
+// pulled out of the review queue entirely; items the rule can't match remain for human review.
 async function applyRuleOverrides(
   customerName: string,
   unmatchedItems: any[],
@@ -28,7 +29,6 @@ async function applyRuleOverrides(
   const additionalMatches: any[] = [];
 
   for (const u of unmatchedItems) {
-    if (u.needsReview) continue;
     try {
       const result = await RuleEngine.evaluateRule(activeRule, {
         transaction: u.transaction,
@@ -636,10 +636,11 @@ router.post('/preview', async (req, res) => {
       }
       stillUnmatched.push(u);
     }
-    // Rule engine fallback: rescue truly-unmatched items (skip review-queue — those need human selection)
+    // Rule engine: run on ALL unmatched items. Items the rule matches are pulled out of the
+    // review queue automatically; items it can't match remain for human selection.
     const ruleMatches = await applyRuleOverrides(
       pricelist.customer_name,
-      stillUnmatched.filter((u: any) => !u.needsReview),
+      stillUnmatched,
       pricelist.template_structure
     );
     const ruleMatchedIds = new Set(ruleMatches.map((m: any) => m.transaction.id));
@@ -662,9 +663,11 @@ router.post('/preview', async (req, res) => {
         transaction: {
           id: u.transaction.id,
           date: u.transaction.date,
+          orderNumber: u.transaction.orderNumber,
           segment: u.transaction.segment,
           movementType: u.transaction.movementType,
           category: u.transaction.category,
+          unitOfMeasure: u.transaction.unitOfMeasure,
           description: u.transaction.description,
           quantity: u.transaction.quantity
         },
