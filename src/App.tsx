@@ -21,7 +21,7 @@ function App() {
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               <img
-                src="/unilog-sc-logo.svg"
+                src="/logo.png"
                 alt="Unilog SC"
                 className="h-[46px] w-auto shrink-0"
               />
