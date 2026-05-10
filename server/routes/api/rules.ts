@@ -190,15 +190,30 @@ router.post('/:id/test', async (req, res) => {
 
     const result = await RuleEngine.evaluateRule({ ...rule, enabled: true }, evaluationContext);
 
+    // Derive test status from result shape
+    const hasMatchStep = result.data && ('matches' in result.data || 'unmatched' in result.data);
+    const hasMatch = hasMatchStep && Array.isArray(result.data?.matches) && result.data.matches.length > 0;
+    let testStatus: 'passed' | 'failed' | 'error';
+    if (!result.success || (result.errors && result.errors.length > 0)) {
+      testStatus = 'error';
+    } else if (hasMatchStep) {
+      testStatus = hasMatch ? 'passed' : 'failed';
+    } else {
+      testStatus = 'passed';
+    }
+
     // Log test run
     db.prepare(`
-      INSERT INTO rule_test_runs (rule_id, test_data, result, passed)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO rule_test_runs (rule_id, test_data, result, result_data, status, passed, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       req.params.id,
       JSON.stringify(testData),
       JSON.stringify(result),
-      result.success ? 1 : 0
+      JSON.stringify(result.data ?? null),
+      testStatus,
+      testStatus === 'passed' ? 1 : 0,
+      'system'
     );
 
     res.json(result);
@@ -437,21 +452,20 @@ router.post('/:id/create-version', (req, res) => {
 // Delete rule
 router.delete('/:id', (req, res) => {
   try {
-    const { updated_by } = req.body;
     const rule = CustomerRuleModel.getById(req.params.id);
 
     if (!rule) {
       return res.status(404).json({ error: 'Rule not found' });
     }
 
+    // Manually remove children first — the tables were created before CASCADE was added
+    // so the live FK is NO ACTION, not CASCADE.
+    db.prepare('DELETE FROM rule_test_runs WHERE rule_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM rule_audit_log WHERE rule_id = ?').run(req.params.id);
+
     const deleted = CustomerRuleModel.delete(req.params.id);
 
     if (deleted) {
-      db.prepare(`
-        INSERT INTO rule_audit_log (rule_id, action, old_value, changed_by)
-        VALUES (?, 'deleted', ?, ?)
-      `).run(req.params.id, JSON.stringify(rule), updated_by || 'admin');
-
       res.status(204).send();
     } else {
       res.status(500).json({ error: 'Failed to delete rule' });
