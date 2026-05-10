@@ -87,7 +87,7 @@ router.post('/', (req, res) => {
 // Update rule
 router.put('/:id', (req, res) => {
   try {
-    const { name, description, version, enabled, steps, updated_by } = req.body;
+    const { name, description, version, enabled, steps, ruleType, updated_by } = req.body;
     const ruleId = req.params.id;
 
     const oldRule = CustomerRuleModel.getById(ruleId);
@@ -95,17 +95,38 @@ router.put('/:id', (req, res) => {
       return res.status(404).json({ error: 'Rule not found' });
     }
 
+    // Active rules must be copied, not edited in place
+    if (oldRule.enabled) {
+      return res.status(409).json({
+        error: 'active_rule_edit_blocked',
+        message: 'Active rules cannot be edited directly. Disable it first, or create a draft copy.',
+      });
+    }
+
+    const newSteps    = steps    !== undefined ? steps    : oldRule.steps;
+    const newRuleType = ruleType !== undefined ? ruleType : oldRule.ruleType;
+
+    // Detect whether billing logic actually changed
+    const stepsChanged   = JSON.stringify(newSteps) !== JSON.stringify(oldRule.steps);
+    const typeChanged    = newRuleType !== oldRule.ruleType;
+    const contentChanged = stepsChanged || typeChanged;
+
+    // Non-draft rule with changed logic must restart the approval lifecycle
+    const shouldResetApproval = contentChanged && oldRule.approval_status !== 'draft';
+
     const updated = CustomerRuleModel.update(ruleId, {
-      name: name || oldRule.name,
-      description: description !== undefined ? description : oldRule.description,
-      version: version || oldRule.version,
-      enabled: enabled !== undefined ? enabled : oldRule.enabled,
-      steps: steps || oldRule.steps,
-      updated_by: updated_by || 'admin'
+      name:            name        || oldRule.name,
+      description:     description !== undefined ? description : oldRule.description,
+      version:         version     || oldRule.version,
+      ruleType:        newRuleType,
+      steps:           newSteps,
+      enabled:         shouldResetApproval ? false : (enabled !== undefined ? enabled : oldRule.enabled),
+      approval_status: shouldResetApproval ? 'draft' : undefined,
+      updated_by:      updated_by  || 'admin',
     });
 
     if (updated) {
-      res.json(updated);
+      res.json({ ...updated, _resetToDraft: shouldResetApproval });
     } else {
       res.status(500).json({ error: 'Failed to update rule' });
     }
@@ -160,14 +181,14 @@ router.post('/:id/test', async (req, res) => {
       return res.status(404).json({ error: 'Rule not found' });
     }
 
-    // Execute rule
+    // Execute rule — bypass the enabled guard so draft rules can be tested
     const evaluationContext: RuleEvaluationContext = {
       transaction: testData.transaction,
       lineItems: testData.lineItems,
       customData: context
     };
 
-    const result = await RuleEngine.evaluateRule(rule, evaluationContext);
+    const result = await RuleEngine.evaluateRule({ ...rule, enabled: true }, evaluationContext);
 
     // Log test run
     db.prepare(`
@@ -391,6 +412,25 @@ Return ONLY a JSON object in this exact format — no prose, no markdown fences:
   } catch (error) {
     console.error('[RuleAssistant] Error:', error);
     res.status(500).json({ error: 'Rule assistant failed', details: (error as Error).message });
+  }
+});
+
+// Create a draft copy of any rule (used to safely iterate on active rules)
+router.post('/:id/create-version', (req, res) => {
+  try {
+    const { created_by } = req.body;
+    const rule = CustomerRuleModel.getById(req.params.id);
+    if (!rule) {
+      return res.status(404).json({ error: 'Rule not found' });
+    }
+    const copy = CustomerRuleModel.createVersion(rule.customer_id, rule.id, created_by || 'admin');
+    if (!copy) {
+      return res.status(500).json({ error: 'Failed to create draft copy' });
+    }
+    res.status(201).json(copy);
+  } catch (error) {
+    console.error('Error creating rule version:', error);
+    res.status(500).json({ error: 'Failed to create draft copy', details: (error as Error).message });
   }
 });
 

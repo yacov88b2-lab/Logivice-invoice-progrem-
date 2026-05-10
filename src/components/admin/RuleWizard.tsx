@@ -178,7 +178,7 @@ export function RuleWizard({ customerId, existingRule, onSave }: RuleWizardProps
         {step === 'name'      && <NameStep      state={state} update={update} isListening={isListening} onToggleVoice={toggleVoice} />}
         {step === 'intent'    && <IntentStep    state={state} update={update} />}
         {step === 'configure' && <ConfigureStep state={state} update={update} customerId={customerId} />}
-        {step === 'review'    && <ReviewStep    state={state} update={update} customerId={customerId} />}
+        {step === 'review'    && <ReviewStep    state={state} update={update} customerId={customerId} existingRule={existingRule} />}
       </div>
 
       {/* Navigation */}
@@ -875,13 +875,16 @@ function OtherConfig({
 // ─── Step: Review ─────────────────────────────────────────────────────────────
 
 function ReviewStep({
-  state, update, customerId,
+  state, update, customerId, existingRule,
 }: {
   state: WizardState;
   update: (p: Partial<WizardState>) => void;
   customerId: string;
+  existingRule?: CustomerRuleDefinition;
 }) {
   const summary = describeRule(state, customerId);
+  const isNew = !existingRule?.id;
+  const canToggleEnable = !isNew && existingRule?.approval_status === 'approved';
 
   return (
     <div className="space-y-5">
@@ -927,25 +930,67 @@ function ReviewStep({
         )}
       </div>
 
-      {/* Enable toggle */}
-      <div className="flex items-center justify-between rounded-xl border border-slate-200 p-4">
-        <div>
-          <p className="text-sm font-semibold text-slate-800">Activate this rule now?</p>
-          <p className="text-xs text-slate-500">You can turn it on or off at any time from the rules list.</p>
+      {/* Lifecycle notice / enable toggle */}
+      {canToggleEnable ? (
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 p-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Enable this rule?</p>
+            <p className="text-xs text-slate-500">
+              This rule is approved. Saving with no step changes keeps it approved — you can enable it now or later from the list.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => update({ enabled: !state.enabled })}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+              state.enabled ? 'bg-[#58a967]' : 'bg-slate-300'
+            }`}
+            aria-label={state.enabled ? 'Disable rule' : 'Enable rule'}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+              state.enabled ? 'translate-x-6' : 'translate-x-1'
+            }`} />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => update({ enabled: !state.enabled })}
-          className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
-            state.enabled ? 'bg-[#58a967]' : 'bg-slate-300'
-          }`}
-          aria-label={state.enabled ? 'Disable rule' : 'Enable rule'}
-        >
-          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-            state.enabled ? 'translate-x-6' : 'translate-x-1'
-          }`} />
-        </button>
-      </div>
+      ) : isNew ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-sm font-semibold text-slate-700">This rule will be saved as Draft</p>
+          <div className="mt-2 flex items-center gap-2 text-xs">
+            {(['Draft', 'Tested', 'Approved', 'Active'] as const).map((label, i, arr) => (
+              <span key={label} className="flex items-center gap-2">
+                <span className={label === 'Draft' ? 'font-bold text-slate-800' : 'text-slate-400'}>{label}</span>
+                {i < arr.length - 1 && <span className="text-slate-300">→</span>}
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            After saving, use <span className="font-semibold">Test</span> → <span className="font-semibold">Approve</span> → <span className="font-semibold">Enable</span> from the rules list.
+          </p>
+        </div>
+      ) : existingRule?.approval_status === 'tested' ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">Saving changes to steps or logic resets this rule to Draft</p>
+          <p className="mt-1 text-xs text-amber-700">
+            It must be re-tested and approved before it can be enabled again.
+            Changes to name or description only do not affect lifecycle status.
+          </p>
+        </div>
+      ) : existingRule?.approval_status === 'approved' ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">Saving changes to steps or logic resets this rule to Draft and disables it</p>
+          <p className="mt-1 text-xs text-amber-700">
+            It must be re-tested and re-approved before it can be enabled again.
+            Changes to name or description only do not affect lifecycle status.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-sm font-semibold text-slate-700">Changes saved — rule stays in Draft</p>
+          <p className="mt-1 text-xs text-slate-400">
+            After saving, use <span className="font-semibold">Test</span> → <span className="font-semibold">Approve</span> → <span className="font-semibold">Enable</span> from the rules list.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

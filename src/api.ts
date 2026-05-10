@@ -176,6 +176,16 @@ export const api = {
     return res.json();
   },
 
+  createRuleVersion: async (id: string) => {
+    const res = await fetch(`${API_BASE}/rules/${id}/create-version`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ created_by: 'admin' }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to create draft copy'));
+    return res.json();
+  },
+
   deleteRule: async (id: string) => {
     const res = await fetch(`${API_BASE}/rules/${id}`, {
       method: 'DELETE',

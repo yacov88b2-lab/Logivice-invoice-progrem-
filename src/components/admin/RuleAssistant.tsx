@@ -106,20 +106,25 @@ export function RuleAssistant({ customerId, onSaved, onCancel }: Props) {
             <span className="text-xs font-semibold uppercase tracking-wide text-[#28258b]">
               Suggested steps ({(result.steps as unknown[]).length})
             </span>
-            <div className="mt-2 space-y-1.5">
+            <div className="mt-2 space-y-2">
               {(result.steps as any[]).map((step, i) => (
-                <div key={i}
-                  className="rounded border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-700">
-                  <span className="font-semibold text-[#28258b]">{step.id || `step${i + 1}`}</span>
-                  {' · '}
-                  <span className="text-slate-500">{step.type}</span>
-                  {step.config && (
-                    <span className="ml-2 text-slate-400">
-                      {Object.entries(step.config as Record<string, unknown>)
-                        .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
-                        .join(', ')}
-                    </span>
-                  )}
+                <div key={i} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                  <span className="mt-0.5 shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-[#28258b] text-[10px] font-bold text-white">
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0 text-sm">
+                    <span className="font-semibold text-slate-800 capitalize">{step.type.replace(/_/g, ' ')}</span>
+                    {step.config && Object.keys(step.config).length > 0 && (
+                      <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                        {Object.entries(step.config as Record<string, unknown>).map(([k, v]) => (
+                          <span key={k}>
+                            <span className="text-slate-400">{k}: </span>
+                            <span className="font-medium text-slate-600">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -136,9 +141,21 @@ export function RuleAssistant({ customerId, onSaved, onCancel }: Props) {
                 className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
               />
             </div>
-            <p className="text-xs text-slate-500">
-              Saved as a <strong>draft</strong> rule. Follow the normal lifecycle (test → approve → enable) before it affects invoices.
-            </p>
+
+            {/* Lifecycle notice */}
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <p className="text-xs font-semibold text-amber-800">Saved as Draft — not active yet</p>
+              <div className="mt-1.5 flex items-center gap-2 text-xs text-amber-700">
+                {['Save as Draft', 'Test it', 'Approve', 'Enable'].map((step, i, arr) => (
+                  <span key={step} className="flex items-center gap-2">
+                    <span className={i === 0 ? 'font-bold' : ''}>{step}</span>
+                    {i < arr.length - 1 && <span className="text-amber-400">→</span>}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-amber-600">The rule won't affect invoices until it's been tested, approved, and enabled.</p>
+            </div>
+
             <div className="flex gap-3">
               <button type="button" onClick={handleSave}
                 disabled={loadingSave || !ruleName.trim() || !customerId}
