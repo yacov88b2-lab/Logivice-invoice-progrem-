@@ -1,9 +1,7 @@
-import * as XLSX from 'xlsx';
-import { promises as fs } from 'node:fs';
 import type { TemplateStructure, Transaction } from '../types';
 import {
   FillResult, getLineItemKey,
-  fillWithExcelJS, addRawSheet
+  fillWithExcelJS
 } from './_base';
 
 function buildSensosQuantities(rawViewData: Map<string, any[]>): Map<string, number> {
@@ -181,28 +179,9 @@ export async function fillSensos(
     }
   }
 
-  // Step 1: Fill Qty/Total with ExcelJS (preserves styles)
-  await fillWithExcelJS(pricelistBuffer, templateStructure, quantities, outputPath, filledRows, errors);
+  // Single ExcelJS session: fill qty/total AND append raw Tableau sheets in one write.
+  // Passing rawViewData here eliminates the previous XLSX round-trip that destroyed formatting.
+  await fillWithExcelJS(pricelistBuffer, templateStructure, quantities, outputPath, filledRows, errors, rawViewData, transactions);
 
-  // Step 2: Add raw Tableau view sheets
-  const writtenBuffer = await fs.readFile(outputPath);
-  const workbook      = XLSX.read(writtenBuffer, { type: 'buffer', cellStyles: true });
-
-  if (rawViewData) {
-    const getView = (name: string) => {
-      if (rawViewData.has(name)) return rawViewData.get(name);
-      for (const [k, v] of rawViewData.entries()) { if (k.trim() === name) return v; }
-      return undefined;
-    };
-    const inbound    = getView('Inbound');    if (inbound)    addRawSheet(workbook, inbound,    'Inbound');
-    const outbound   = getView('Outbound');   if (outbound)   addRawSheet(workbook, outbound,   'Outbound');
-    const storage    = getView('Storage');    if (storage)    addRawSheet(workbook, storage,    'Storage');
-    const vas        = rawViewData.get('VAS'); if (vas)       addRawSheet(workbook, vas,        'VAS');
-    const management = rawViewData.get('Management') || rawViewData.get('Managment');
-    if (management) addRawSheet(workbook, management, 'Management');
-    const exw = rawViewData.get('EXW');       if (exw)        addRawSheet(workbook, exw,        'EXW');
-  }
-
-  XLSX.writeFile(workbook, outputPath, { cellStyles: true });
   return { success: errors.length === 0, filePath: outputPath, filledRows, errors };
 }
