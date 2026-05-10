@@ -170,7 +170,9 @@ export async function fillWithExcelJS(
   quantities: Map<string, number>,
   outputPath: string,
   filledRows: FillResult['filledRows'],
-  errors: string[]
+  errors: string[],
+  rawData?: Map<string, any[]>,
+  transactions?: Transaction[]
 ): Promise<void> {
   const excelWorkbook = new ExcelJS.Workbook();
   await excelWorkbook.xlsx.load(pricelistBuffer as any);
@@ -197,6 +199,15 @@ export async function fillWithExcelJS(
         oldQty: oldQty !== null ? Number(oldQty) : null, newQty, oldTotal: 0, newTotal });
     }
   }
+  if (rawData) {
+    for (const [viewName, rows] of rawData.entries()) {
+      if (Array.isArray(rows) && rows.length) {
+        const safeName = String(viewName).replace(/[\\/?*[\]:]/g, '_').slice(0, 31);
+        addRawSheetExcelJS(excelWorkbook, rows, safeName);
+      }
+    }
+  }
+  if (transactions?.length) addAnalyzeSheetExcelJS(excelWorkbook, transactions);
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await excelWorkbook.xlsx.writeFile(outputPath);
   console.log(`[Base] ExcelJS wrote template: ${outputPath}`);
@@ -377,13 +388,18 @@ export async function addOrReplaceWorksheetOpenXml(
   zip.file(wbXmlPath,  builder.build(wbObj));
 }
 
-export function addRawSheet(workbook: XLSX.WorkBook, data: any[], name: string): void {
-  if (!data.length) return;
+// ── Shared AoA builder ────────────────────────────────────────────────────────
+// Builds the array-of-arrays for a raw data sheet including any summary pivot.
+// Used by both the XLSX path (addRawSheet) and the ExcelJS path (addRawSheetExcelJS).
+
+export function buildRawSheetAoa(data: any[], name: string): any[][] {
+  if (!data.length) return [];
   const headers = Object.keys(data[0]);
   console.log(`[Base] ${name} sheet headers:`, headers);
   console.log(`[Base] ${name} first row sample:`, data[0]);
   const rows = data.map(r => headers.map(h => r[h] ?? ''));
   const aoa: any[][] = [headers, ...rows];
+
   if (name === 'Inbound' || name === 'Outbound') {
     const findCol = (keywords: string[]) =>
       headers.find(h => keywords.some(kw => h.toLowerCase().includes(kw.toLowerCase())));
@@ -409,7 +425,7 @@ export function addRawSheet(workbook: XLSX.WorkBook, data: any[], name: string):
         totalRefs += refs.size; totalBoxes += boxes;
       }
     } else {
-      const domIntCol          = findCol(["Dom/Int'l", 'Dom/Int', 'domint']);
+      const domIntCol           = findCol(["Dom/Int'l", 'Dom/Int', 'domint']);
       const distinctCountIdCol2 = findCol(['Distinct count of Id (Billable Scan Logs)', 'Distinct count of Id']);
       const pivot = new Map<string, { svc: string; domInt: string; refs: Set<string>; boxes: number }>();
       for (const row of data) {
@@ -448,6 +464,7 @@ export function addRawSheet(workbook: XLSX.WorkBook, data: any[], name: string):
     }
     console.log(`[Base] ${name} summary: ${summaryDataRows.length} groups, ${totalRefs} orders, ${totalBoxes} boxes`);
   }
+
   if (name === 'Storage') {
     const toNumber = (v: any): number => {
       const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, ''));
@@ -468,10 +485,19 @@ export function addRawSheet(workbook: XLSX.WorkBook, data: any[], name: string):
     aoa[3] = aoa[3] || []; aoa[3][startCol] = 'Total';  aoa[3][startCol + 1] = '';  aoa[3][startCol + 2] = '';         aoa[3][startCol + 3] = totalSqm;
     console.log(`[Base] Storage summary: maxShelf=${maxShelf}(${shelfSqm}sqm), maxPallet=${maxPallet}(${palletSqm}sqm), total=${totalSqm}sqm`);
   }
+
+  console.log(`[Base] ${name}: ${data.length} rows`);
+  return aoa;
+}
+
+// ── XLSX raw-sheet writer (kept for compatibility with Afimilk path) ───────────
+
+export function addRawSheet(workbook: XLSX.WorkBook, data: any[], name: string): void {
+  if (!data.length) return;
+  const aoa = buildRawSheetAoa(data, name);
   const sheet = XLSX.utils.aoa_to_sheet(aoa);
   if (workbook.SheetNames.includes(name)) { workbook.Sheets[name] = sheet; }
   else { workbook.SheetNames.push(name); workbook.Sheets[name] = sheet; }
-  console.log(`[Base] ${name}: ${data.length} rows`);
 }
 
 export function addAnalyzeSheet(workbook: XLSX.WorkBook, transactions: Transaction[]): void {
@@ -491,4 +517,38 @@ export function addAnalyzeSheet(workbook: XLSX.WorkBook, transactions: Transacti
   workbook.SheetNames.push('Analyze');
   workbook.Sheets['Analyze'] = sheet;
   console.log(`[Base] Analyze: ${groups.size} groups`);
+}
+
+// ── ExcelJS raw-sheet writer ──────────────────────────────────────────────────
+// Adds raw data sheets to an already-open ExcelJS workbook WITHOUT a XLSX round-trip,
+// so the template's colours, borders, and conditional formatting are fully preserved.
+
+export function addRawSheetExcelJS(excelWorkbook: any, data: any[], name: string): void {
+  if (!data.length) return;
+  const aoa = buildRawSheetAoa(data, name);
+  const existing = excelWorkbook.getWorksheet(name);
+  if (existing) excelWorkbook.removeWorksheet(existing.id);
+  const ws = excelWorkbook.addWorksheet(name);
+  for (const row of aoa) {
+    ws.addRow(row);
+  }
+}
+
+export function addAnalyzeSheetExcelJS(excelWorkbook: any, transactions: Transaction[]): void {
+  const groups = new Map<string, { type: string; orders: Set<string>; qty: number }>();
+  transactions.forEach(t => {
+    const key = t.segment;
+    if (!groups.has(key)) groups.set(key, { type: t.segment, orders: new Set(), qty: 0 });
+    const g = groups.get(key)!;
+    g.orders.add(t.orderNumber); g.qty += t.quantity;
+  });
+  const existing = excelWorkbook.getWorksheet('Analyze');
+  if (existing) excelWorkbook.removeWorksheet(existing.id);
+  const ws = excelWorkbook.addWorksheet('Analyze');
+  ws.addRow(['Type', 'Ref (Orders)', 'Order count', 'QTY']);
+  groups.forEach((g, type) => {
+    ws.addRow([type, '', '', '']);
+    ws.addRow(['', 'Total', g.orders.size, g.qty]);
+  });
+  console.log(`[Base] Analyze (ExcelJS): ${groups.size} groups`);
 }

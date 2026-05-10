@@ -7,6 +7,7 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import type { TemplateStructure, LineItem, Transaction } from '../types';
+import { addRawSheetExcelJS } from '../rules/_base';
 
 export interface FillResult {
   success: boolean;
@@ -788,7 +789,8 @@ export class QTYFiller {
     quantities: Map<string, number>,
     outputPath: string,
     filledRows: FillResult['filledRows'],
-    errors: string[]
+    errors: string[],
+    rawViewData?: Map<string, any[]>
   ): Promise<void> {
     const excelWorkbook = new ExcelJS.Workbook();
     await excelWorkbook.xlsx.load(pricelistBuffer as any);
@@ -807,7 +809,6 @@ export class QTYFiller {
         if (newQty === undefined) continue;
 
         const { columns } = templateStructure;
-        // ExcelJS uses 1-based row and 1-based column
         const row = worksheet.getRow(item.row);
         const qtyCell   = row.getCell(columns.qty + 1);
         const totalCell = row.getCell(columns.total + 1);
@@ -820,7 +821,6 @@ export class QTYFiller {
         qtyCell.value   = newQty;
         totalCell.value = newTotal;
 
-        // For fractional quantities (e.g. Storage Sqm = 16.5), ensure cell format shows decimals
         if (newQty !== Math.floor(newQty)) {
           qtyCell.numFmt = '0.0';
         }
@@ -834,6 +834,29 @@ export class QTYFiller {
           newTotal
         });
       }
+    }
+
+    // Add raw data sheets in the same ExcelJS session — no XLSX round-trip, preserves template formatting
+    if (rawViewData) {
+      const getView = (name: string): any[] | undefined => {
+        if (rawViewData.has(name)) return rawViewData.get(name);
+        for (const [k, v] of rawViewData.entries()) {
+          if (k.trim() === name) return v;
+        }
+        return undefined;
+      };
+      const inbound = getView('Inbound');
+      if (inbound?.length) addRawSheetExcelJS(excelWorkbook, inbound, 'Inbound');
+      const outbound = getView('Outbound');
+      if (outbound?.length) addRawSheetExcelJS(excelWorkbook, outbound, 'Outbound');
+      const storage = getView('Storage');
+      if (storage?.length) addRawSheetExcelJS(excelWorkbook, storage, 'Storage');
+      const vas = rawViewData.get('VAS');
+      if (vas?.length) addRawSheetExcelJS(excelWorkbook, vas, 'VAS');
+      const management = rawViewData.get('Management') || rawViewData.get('Managment');
+      if (management?.length) addRawSheetExcelJS(excelWorkbook, management, 'Management');
+      const exw = rawViewData.get('EXW');
+      if (exw?.length) addRawSheetExcelJS(excelWorkbook, exw, 'EXW');
     }
 
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
@@ -934,44 +957,7 @@ export class QTYFiller {
       }
     }
 
-    // Step 1: Use ExcelJS to fill Qty/Total into the template (preserves all styles/colors)
-    await this.fillWithExcelJS(pricelistBuffer, templateStructure, quantities, outputPath, filledRows, errors);
-
-    // Step 2: Use XLSX to add raw data sheets on top of the already-written file
-    const writtenBuffer = await fs.readFile(outputPath);
-    const workbook = XLSX.read(writtenBuffer, { type: 'buffer', cellStyles: true });
-    console.log('[QTYFiller] Step 2 - XLSX workbook sheets:', workbook.SheetNames);
-
-    if (rawViewData) {
-      console.log('[QTYFiller] rawViewData keys:', Array.from(rawViewData.keys()).map(k => `"${k}"(${rawViewData.get(k)?.length}rows)`).join(', '));
-      const getView = (name: string) => {
-        if (rawViewData.has(name)) return rawViewData.get(name);
-        for (const [k, v] of rawViewData.entries()) {
-          if (k.trim() === name) return v;
-        }
-        return undefined;
-      };
-      const inbound = getView('Inbound');
-      if (inbound) this.addRawSheet(workbook, inbound, 'Inbound');
-      const outbound = getView('Outbound');
-      if (outbound) this.addRawSheet(workbook, outbound, 'Outbound');
-      const storage = getView('Storage');
-      if (storage) this.addRawSheet(workbook, storage, 'Storage');
-      const vas = rawViewData.get('VAS');
-      if (vas) this.addRawSheet(workbook, vas, 'VAS');
-      const management = rawViewData.get('Management') || rawViewData.get('Managment');
-      if (management) this.addRawSheet(workbook, management, 'Management');
-      const exw = rawViewData.get('EXW');
-      if (exw) this.addRawSheet(workbook, exw, 'EXW');
-    }
-
-    console.log('[QTYFiller] Final workbook sheets before write:', workbook.SheetNames);
-    for (const sn of workbook.SheetNames) {
-      const ws = workbook.Sheets[sn];
-      const range = ws?.['!ref'] || 'EMPTY';
-      console.log(`[QTYFiller]   Sheet "${sn}" range: ${range}`);
-    }
-    XLSX.writeFile(workbook, outputPath, { cellStyles: true });
+    await this.fillWithExcelJS(pricelistBuffer, templateStructure, quantities, outputPath, filledRows, errors, rawViewData);
     return { success: errors.length === 0, filePath: outputPath, filledRows, errors };
   }
 

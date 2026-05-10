@@ -2,11 +2,7 @@ import type { TemplateStructure, Transaction } from '../types';
 import type { FillResult } from './_base';
 import { fillAfimilkPreserveTemplate, extractAfimilkStoragePeriod, buildAfimilkStorageEntries } from './afimilk';
 import { fillSensos } from './sensos';
-import {
-  fillWithExcelJS, addRawSheet, addAnalyzeSheet, getLineItemKey, FillResult as _FillResult
-} from './_base';
-import * as XLSX from 'xlsx';
-import { promises as fs } from 'node:fs';
+import { fillWithExcelJS } from './_base';
 
 function detectCustomer(customerName: string): 'afimilk' | 'sensos' | 'default' {
   const name = String(customerName || '').toLowerCase();
@@ -47,20 +43,7 @@ export async function fillInvoice(
   const filledRows: FillResult['filledRows'] = [];
   const errors: string[] = [];
 
-  await fillWithExcelJS(pricelistBuffer, templateStructure, quantities, outputPath, filledRows, errors);
-
-  if (rawViewData) {
-    const writtenBuffer = await fs.readFile(outputPath);
-    const workbook      = XLSX.read(writtenBuffer, { type: 'buffer', cellStyles: true });
-    for (const [viewName, rows] of rawViewData.entries()) {
-      if (Array.isArray(rows) && rows.length) {
-        const safeName = String(viewName).replace(/[\\/?*\[\]:]/g, '_').slice(0, 31);
-        addRawSheet(workbook, rows, safeName);
-      }
-    }
-    if (transactions?.length) addAnalyzeSheet(workbook, transactions);
-    XLSX.writeFile(workbook, outputPath, { cellStyles: true });
-  }
+  await fillWithExcelJS(pricelistBuffer, templateStructure, quantities, outputPath, filledRows, errors, rawViewData, transactions);
 
   return { success: errors.length === 0, filePath: outputPath, filledRows, errors };
 }

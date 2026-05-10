@@ -373,7 +373,7 @@ Return ONLY a JSON object in this exact format — no prose, no markdown fences:
         'content-type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userContent }]
