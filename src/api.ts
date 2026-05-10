@@ -91,8 +91,8 @@ export const api = {
     return res.json();
   },
 
-  generateInvoice: async (pricelistId: number, startDate: string, endDate: string, userId: number = 1, resolvedItems?: Record<string, number>, force = false) => {
-    const body: Record<string, unknown> = { pricelist_id: pricelistId, start_date: startDate, end_date: endDate, user_id: userId, force };
+  generateInvoice: async (pricelistId: number, startDate: string, endDate: string, userId: number = 1, resolvedItems?: Record<string, number>, force = false, forceReview = false) => {
+    const body: Record<string, unknown> = { pricelist_id: pricelistId, start_date: startDate, end_date: endDate, user_id: userId, force, force_review: forceReview };
     if (resolvedItems && Object.keys(resolvedItems).length > 0) body.resolvedItems = resolvedItems;
     const res = await fetch(`${API_BASE}/generate/invoice`, {
       method: 'POST',
@@ -101,11 +101,21 @@ export const api = {
     });
     if (res.status === 409) {
       const data = await res.json();
-      const err = new Error(data.message || 'Duplicate invoice period') as Error & { isDuplicate: true; generatedAt: string; existingAuditLogId: number };
-      (err as any).isDuplicate = true;
-      (err as any).generatedAt = data.generatedAt;
-      (err as any).existingAuditLogId = data.existingAuditLogId;
+      const err = new Error(data.message || 'Duplicate invoice period') as any;
+      err.isDuplicate = true;
+      err.generatedAt = data.generatedAt;
+      err.existingAuditLogId = data.existingAuditLogId;
       throw err;
+    }
+    if (res.status === 422) {
+      const data = await res.json();
+      if (data.error === 'unresolved_review_items') {
+        const err = new Error(data.message) as any;
+        err.isUnresolvedReview = true;
+        err.unresolvedCount = data.count;
+        throw err;
+      }
+      throw new Error(await getErrorMessage(res, 'Failed to generate invoice'));
     }
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to generate invoice'));
     const data = await res.json();

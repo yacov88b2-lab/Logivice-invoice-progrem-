@@ -136,6 +136,13 @@ async function buildRuleDiagnostics(
 }
 
 // Export matched/unmatched + raw Tableau sheets as a single Excel file
+// TODO(export-alignment): This endpoint uses raw DataMapper output only. It does NOT apply
+// resolvedItems (manual review-queue selections) or applyRuleOverrides (rule-engine fallback).
+// As a result, the exported match/unmatched counts may differ from what preview/invoice produce.
+// Intentionally left as-is for QA release — it serves as a raw diagnostic view.
+// To align: accept resolvedItems + call applyRuleOverrides, matching the /invoice pipeline.
+// Risk: export-total is used mid-session before resolutions are finalised; aligning too early
+// could show a misleadingly optimistic match count. Re-evaluate after the first full billing cycle.
 router.post('/export-total', async (req, res) => {
   try {
     const { pricelist_id, start_date, end_date } = req.body;
@@ -260,7 +267,8 @@ router.post('/invoice', async (req, res) => {
       use_excel_data = true,
       user_id = 1,
       resolvedItems,
-      force = false
+      force = false,
+      force_review = false
     } = req.body;
 
     if (!pricelist_id || !start_date || !end_date) {
@@ -380,6 +388,16 @@ router.post('/invoice', async (req, res) => {
         }
       }
       afterResolutionUnmatched.push(u);
+    }
+
+    // Block generation if reviewer left items unresolved — those transactions would be silently dropped from billing
+    const unresolvedReviewCount = afterResolutionUnmatched.filter((u: any) => u.needsReview).length;
+    if (unresolvedReviewCount > 0 && !force_review) {
+      return res.status(422).json({
+        error: 'unresolved_review_items',
+        count: unresolvedReviewCount,
+        message: `${unresolvedReviewCount} transaction${unresolvedReviewCount !== 1 ? 's' : ''} in the review queue have not been resolved. Resolve them first, or pass force_review=true to skip and drop them from this invoice.`
+      });
     }
 
     // Rule engine fallback: rescue truly-unmatched items the DataMapper couldn't place

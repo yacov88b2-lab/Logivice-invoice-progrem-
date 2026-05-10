@@ -77,12 +77,6 @@ router.post('/', (req, res) => {
       created_by: created_by || 'admin'
     });
 
-    // Log action
-    db.prepare(`
-      INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
-      VALUES (?, 'created', ?, ?)
-    `).run(rule.id, JSON.stringify(rule.steps), created_by || 'admin');
-
     res.status(201).json(rule);
   } catch (error) {
     console.error('Error creating rule:', error);
@@ -111,14 +105,6 @@ router.put('/:id', (req, res) => {
     });
 
     if (updated) {
-      // Log changes
-      if (JSON.stringify(steps) !== JSON.stringify(oldRule.steps)) {
-        db.prepare(`
-          INSERT INTO rule_audit_log (rule_id, action, old_value, new_value, changed_by)
-          VALUES (?, 'updated', ?, ?, ?)
-        `).run(ruleId, JSON.stringify(oldRule.steps), JSON.stringify(steps), updated_by || 'admin');
-      }
-
       res.json(updated);
     } else {
       res.status(500).json({ error: 'Failed to update rule' });
@@ -153,20 +139,10 @@ router.patch('/:id/toggle', (req, res) => {
 
       for (const otherRule of other) {
         CustomerRuleModel.update(otherRule.id, { enabled: false, updated_by: updated_by || 'admin' });
-        db.prepare(`
-          INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
-          VALUES (?, 'disabled', ?, ?)
-        `).run(otherRule.id, 'false', updated_by || 'admin');
       }
     }
 
     const updated = CustomerRuleModel.update(req.params.id, { enabled, updated_by: updated_by || 'admin' });
-
-    db.prepare(`
-      INSERT INTO rule_audit_log (rule_id, action, new_value, changed_by)
-      VALUES (?, ?, ?, ?)
-    `).run(req.params.id, enabled ? 'enabled' : 'disabled', String(enabled), updated_by || 'admin');
-
     res.json(updated);
   } catch (error) {
     console.error('Error toggling rule:', error);

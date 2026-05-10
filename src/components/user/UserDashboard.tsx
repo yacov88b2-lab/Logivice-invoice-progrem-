@@ -18,6 +18,7 @@ export function UserDashboard() {
   const [billingCycle, setBillingCycle] = useState<'custom' | 'full_month'>('full_month');
   const [resolvedItems, setResolvedItems] = useState<Record<string, number>>({});
   const [duplicateWarning, setDuplicateWarning] = useState<{ generatedAt: string; existingAuditLogId: number } | null>(null);
+  const [reviewWarning, setReviewWarning] = useState<{ count: number } | null>(null);
 
   const loadPricelists = async () => {
     setLoadingPricelists(true);
@@ -148,6 +149,7 @@ export function UserDashboard() {
     setError(null);
     setResolvedItems({});
     setDuplicateWarning(null);
+    setReviewWarning(null);
   }, [selectedCustomer, selectedWarehouse, selectedPricelist, billingCycle]);
 
   const handlePreview = async () => {
@@ -183,17 +185,20 @@ export function UserDashboard() {
     await executeGenerate();
   };
 
-  const executeGenerate = async (force = false) => {
+  const executeGenerate = async (force = false, forceReview = false) => {
     try {
       setLoading(true);
       setError(null);
       setDuplicateWarning(null);
-      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, 1, resolvedItems, force);
+      setReviewWarning(null);
+      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, 1, resolvedItems, force, forceReview);
       setResult(data);
       setStep('result');
     } catch (err) {
-      if (err instanceof Error && (err as any).isDuplicate) {
+      if ((err as any).isDuplicate) {
         setDuplicateWarning({ generatedAt: (err as any).generatedAt, existingAuditLogId: (err as any).existingAuditLogId });
+      } else if ((err as any).isUnresolvedReview) {
+        setReviewWarning({ count: (err as any).unresolvedCount });
       } else {
         setError(err instanceof Error ? err.message : 'Failed to generate invoice. Please try again.');
       }
@@ -273,6 +278,7 @@ export function UserDashboard() {
     setError(null);
     setResolvedItems({});
     setDuplicateWarning(null);
+    setReviewWarning(null);
   };
 
   const handleBackToPreview = () => {
@@ -693,6 +699,34 @@ export function UserDashboard() {
                   <div>Inbound Orders: {preview.transactions?.filter((t) => t.segment === 'Inbound').length || 0}</div>
                   <div>Outbound Orders: {preview.transactions?.filter((t) => t.segment === 'Outbound').length || 0}</div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {reviewWarning && (
+            <div className="rounded-lg border border-red-300 bg-red-50 p-4">
+              <p className="text-sm font-semibold text-red-900">
+                {reviewWarning.count} transaction{reviewWarning.count !== 1 ? 's' : ''} still need your selection
+              </p>
+              <p className="mt-1 text-sm text-red-800">
+                Scroll up to the review queue and pick the correct pricelist row for each one. If you skip them, those transactions will be missing from the invoice.
+              </p>
+              <div className="mt-3 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => executeGenerate(false, true)}
+                  disabled={loading}
+                  className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  Skip them and generate anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewWarning(null)}
+                  className="rounded border border-red-300 px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-100"
+                >
+                  Go back and resolve
+                </button>
               </div>
             </div>
           )}
