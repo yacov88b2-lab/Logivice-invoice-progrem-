@@ -140,7 +140,13 @@ export function initDatabase() {
             updated_by TEXT NOT NULL
           )
         `);
-        db.exec(`INSERT INTO customer_rules SELECT id,customer_id,name,description,version,enabled,rule_type,steps,created_at,created_by,updated_at,updated_by FROM customer_rules_old`);
+        // Only copy columns that actually exist in the old table to handle schema drift
+        const oldCols = (db.prepare('PRAGMA table_info(customer_rules_old)').all() as { name: string }[]).map(c => c.name);
+        const wantedCols = ['id','customer_id','name','description','version','enabled','rule_type','steps','created_at','created_by','updated_at','updated_by'];
+        const commonCols = wantedCols.filter(c => oldCols.includes(c));
+        if (commonCols.length > 0) {
+          db.exec(`INSERT INTO customer_rules (${commonCols.join(',')}) SELECT ${commonCols.join(',')} FROM customer_rules_old`);
+        }
         db.exec(`DROP TABLE customer_rules_old`);
       });
       migrate();
@@ -148,6 +154,24 @@ export function initDatabase() {
     }
   } catch (e) {
     console.error('[DB] Migration customer_rules failed:', e);
+  }
+
+  // Safety net: if customer_rules_old is still present after all migrations, drop it.
+  // This handles cases where SQLite did not fully roll back DDL inside a failed transaction.
+  try {
+    const staleOld = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_rules_old'").get();
+    if (staleOld) {
+      const mainExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_rules'").get();
+      if (mainExists) {
+        db.exec('DROP TABLE customer_rules_old');
+        console.log('[DB] Safety net: dropped stale customer_rules_old table');
+      } else {
+        db.exec('ALTER TABLE customer_rules_old RENAME TO customer_rules');
+        console.log('[DB] Safety net: restored customer_rules from customer_rules_old');
+      }
+    }
+  } catch (e) {
+    console.error('[DB] Safety net cleanup failed:', e);
   }
 
   // Create indexes for customer_rules
