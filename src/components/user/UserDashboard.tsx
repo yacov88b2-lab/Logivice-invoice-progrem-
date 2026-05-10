@@ -949,18 +949,149 @@ function ReviewQueuePanel({
   onApply: () => void;
   loading: boolean;
 }) {
-  const resolvedCount = reviewQueue.filter(item => resolvedItems[item.transaction.id] !== undefined).length;
+  const [flagged, setFlagged] = useState<Set<string>>(new Set());
+  const [flaggedOpen, setFlaggedOpen] = useState(false);
+
+  const toggleFlag = (txId: string) => {
+    setFlagged(prev => {
+      const next = new Set(prev);
+      if (next.has(txId)) {
+        next.delete(txId);
+      } else {
+        next.add(txId);
+        onResolve(txId, null);
+      }
+      return next;
+    });
+  };
+
+  const activeItems   = reviewQueue.filter(item => !flagged.has(item.transaction.id));
+  const flaggedItems  = reviewQueue.filter(item =>  flagged.has(item.transaction.id));
+  const confirmItems  = activeItems.filter(item => item.alternatives.length === 1);
+  const chooseItems   = activeItems.filter(item => item.alternatives.length > 1);
+
+  const resolvedCount = reviewQueue.filter(item =>
+    resolvedItems[item.transaction.id] !== undefined || flagged.has(item.transaction.id)
+  ).length;
   const allDone = resolvedCount === reviewQueue.length;
+
+  const renderCard = (item: typeof reviewQueue[0], mode: 'confirm' | 'choose') => {
+    const txId = item.transaction.id;
+    const tx   = item.transaction;
+    const isResolved = resolvedItems[txId] !== undefined;
+    const maxScore   = Math.max(...item.alternatives.map(a => a.score));
+
+    const chips = [
+      tx.movementType,
+      tx.category,
+      tx.quantity != null ? `${tx.quantity} ${tx.unitOfMeasure || 'units'}` : null,
+      tx.date ? new Date(tx.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null,
+    ].filter(Boolean);
+
+    return (
+      <div
+        key={txId}
+        className={`rounded-lg border bg-white p-4 transition-colors ${
+          isResolved ? 'border-green-300' : 'border-orange-200'
+        }`}
+      >
+        {/* Transaction identity */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            {tx.orderNumber ? (
+              <div className="text-base font-bold text-slate-900 font-mono tracking-wide">
+                {tx.orderNumber}
+              </div>
+            ) : (
+              <div className="text-sm font-semibold text-slate-400 italic">No order number</div>
+            )}
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {chips.map((chip, i) => (
+                <span key={i} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 font-medium">
+                  {chip}
+                </span>
+              ))}
+            </div>
+            {item.reason && (
+              <p className="mt-1.5 text-xs text-orange-700 italic">{item.reason}</p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {isResolved && <span className="text-xs font-semibold text-green-700">✓ Done</span>}
+            <button
+              type="button"
+              onClick={() => toggleFlag(txId)}
+              className="rounded px-2 py-1 text-xs font-medium text-slate-500 border border-slate-200 hover:border-orange-300 hover:text-orange-600 transition-colors"
+            >
+              Flag for later
+            </button>
+          </div>
+        </div>
+
+        {/* Options */}
+        <p className="mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          {mode === 'confirm' ? 'Does this match look correct?' : 'Which pricelist row is this?'}
+        </p>
+        <div className="space-y-1.5">
+          {item.alternatives.map((alt, idx) => {
+            const isSelected = resolvedItems[txId] === idx;
+            const isBest     = alt.score === maxScore;
+            const name = alt.lineItem.remark
+              || [alt.lineItem.segment, alt.lineItem.clause].filter(Boolean).join(' / ')
+              || `Row ${alt.lineItem.row}`;
+            const sheet = (alt.lineItem as any).sheet as string | undefined;
+            const rate  = alt.lineItem.rate != null
+              ? `$${Number(alt.lineItem.rate).toFixed(2)} / unit`
+              : null;
+
+            return (
+              <label
+                key={idx}
+                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                  isSelected
+                    ? 'border-[#28258b] bg-[#28258b]/5'
+                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name={`resolve-${txId}`}
+                  checked={isSelected}
+                  onChange={() => onResolve(txId, idx)}
+                  className="shrink-0"
+                />
+                <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
+                  <div className="min-w-0">
+                    <span className="font-medium text-slate-800 truncate block">{name}</span>
+                    {sheet && <span className="text-xs text-slate-400">{sheet}</span>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {rate && <span className="text-sm font-semibold text-slate-700">{rate}</span>}
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      isBest ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {isBest ? 'Best match' : 'Also matches'}
+                    </span>
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <section className="rounded-xl border border-orange-200 bg-orange-50 p-4 space-y-4">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h4 className="text-base font-semibold text-orange-900">
-            {reviewQueue.length} transaction{reviewQueue.length !== 1 ? 's' : ''} need your input
+            {activeItems.length} transaction{activeItems.length !== 1 ? 's' : ''} need your input
           </h4>
           <p className="mt-1 text-sm text-orange-800">
-            The system found multiple possible pricelist rows for each of these. Pick the correct one, then update the preview.
+            Look up the order number in Logivice, then pick the correct pricelist row — or flag it for later.
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
@@ -970,94 +1101,76 @@ function ReviewQueuePanel({
         </span>
       </div>
 
-      <div className="space-y-3">
-        {reviewQueue.map((item, itemIdx) => {
-          const txId = item.transaction.id;
-          const tx = item.transaction;
-          const isResolved = resolvedItems[txId] !== undefined;
-          const maxScore = Math.max(...item.alternatives.map(a => a.score));
+      {/* Section 1 — Confirm single match */}
+      {confirmItems.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="h-px flex-1 bg-orange-200" />
+            <span className="text-xs font-semibold text-orange-600 uppercase tracking-wide">
+              Confirm match ({confirmItems.length})
+            </span>
+            <div className="h-px flex-1 bg-orange-200" />
+          </div>
+          <p className="text-xs text-orange-700">We found one possible row for each of these — please confirm it's correct.</p>
+          <div className="space-y-3">
+            {confirmItems.map(item => renderCard(item, 'confirm'))}
+          </div>
+        </div>
+      )}
 
-          const txLabel = [tx.segment, tx.movementType, tx.category].filter(Boolean).join(' · ');
-          const txSub = [
-            tx.orderNumber ? `Order ${tx.orderNumber}` : null,
-            tx.description || null,
-          ].filter(Boolean).join(' · ');
+      {/* Section 2 — Choose between multiple */}
+      {chooseItems.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="h-px flex-1 bg-orange-200" />
+            <span className="text-xs font-semibold text-orange-600 uppercase tracking-wide">
+              Choose the right row ({chooseItems.length})
+            </span>
+            <div className="h-px flex-1 bg-orange-200" />
+          </div>
+          <p className="text-xs text-orange-700">We found multiple possible rows — pick the one that's correct.</p>
+          <div className="space-y-3">
+            {chooseItems.map(item => renderCard(item, 'choose'))}
+          </div>
+        </div>
+      )}
 
-          return (
-            <div
-              key={txId}
-              className={`rounded-lg border bg-white p-3 transition-colors ${
-                isResolved ? 'border-green-300' : 'border-orange-200'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-slate-900 truncate">{txLabel}</div>
-                  {txSub && <div className="mt-0.5 text-xs text-slate-500 truncate">{txSub}</div>}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span className="text-xs text-slate-500">
-                    QTY <span className="font-semibold text-slate-700">{tx.quantity}</span>
-                  </span>
-                  <span className="text-xs text-slate-400">#{itemIdx + 1}</span>
-                  {isResolved && (
-                    <span className="text-xs font-semibold text-green-700">✓ Done</span>
-                  )}
-                </div>
-              </div>
-
-              <p className="mb-2 text-xs font-medium text-slate-500">Which pricelist row does this belong to?</p>
-
-              <div className="space-y-1.5">
-                {item.alternatives.map((alt, idx) => {
-                  const isSelected = resolvedItems[txId] === idx;
-                  const isBest = alt.score === maxScore;
-                  const name = alt.lineItem.remark
-                    || [alt.lineItem.segment, alt.lineItem.clause].filter(Boolean).join(' / ')
-                    || `Row ${alt.lineItem.row}`;
-                  const rate = alt.lineItem.rate != null
-                    ? `$${Number(alt.lineItem.rate).toFixed(2)} / unit`
-                    : null;
-
-                  return (
-                    <label
-                      key={idx}
-                      className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                        isSelected
-                          ? 'border-[#28258b] bg-[#28258b]/5'
-                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
+      {/* Section 3 — Flagged for later */}
+      {flaggedItems.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setFlaggedOpen(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          >
+            <span>🚩 Flagged for later ({flaggedItems.length})</span>
+            <span className="text-slate-400">{flaggedOpen ? '▲' : '▼'}</span>
+          </button>
+          {flaggedOpen && (
+            <div className="border-t border-slate-100 p-3 space-y-2">
+              <p className="text-xs text-slate-500 mb-2">These will be excluded from the invoice. Unflag to reconsider.</p>
+              {flaggedItems.map(item => {
+                const tx = item.transaction;
+                return (
+                  <div key={tx.id} className="flex items-center justify-between gap-3 rounded border border-slate-100 bg-slate-50 px-3 py-2">
+                    <div className="min-w-0">
+                      <span className="text-sm font-mono font-semibold text-slate-700">{tx.orderNumber || tx.id}</span>
+                      <span className="ml-2 text-xs text-slate-400">{[tx.movementType, tx.category].filter(Boolean).join(' · ')}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleFlag(tx.id)}
+                      className="text-xs text-slate-500 underline hover:text-slate-800 shrink-0"
                     >
-                      <input
-                        type="radio"
-                        name={`resolve-${txId}`}
-                        checked={isSelected}
-                        onChange={() => onResolve(txId, idx)}
-                        className="shrink-0"
-                      />
-                      <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
-                        <span className="font-medium text-slate-800 truncate">{name}</span>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {rate && (
-                            <span className="text-sm font-semibold text-slate-700">{rate}</span>
-                          )}
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            isBest
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-slate-100 text-slate-500'
-                          }`}>
-                            {isBest ? 'Best match' : 'Also matches'}
-                          </span>
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
+                      Unflag
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          )}
+        </div>
+      )}
 
       <button
         type="button"
