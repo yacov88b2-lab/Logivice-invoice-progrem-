@@ -326,7 +326,7 @@ router.post('/validate-tableau-url', async (req, res) => {
   if (!parsed) {
     return res.json({
       valid: false,
-      error: 'URL must be from dub01.online.tableau.com, site "logivice". Expected: https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName'
+      error: `URL did not match expected format. Received: "${url}". Expected: https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName (or /t/logivice/views/ format)`
     });
   }
 
@@ -365,13 +365,16 @@ async function handleTableauCopyTest(
   ruleId: string,
   res: any
 ) {
-  const url: string = step.config?.url ?? '';
+  const url: string = (step.config?.url ?? '').trim();
   const parsed = parseTableauViewUrl(url);
 
   if (!parsed) {
+    const diagnostic = url
+      ? `Received: "${url}". Must be https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName`
+      : 'No URL configured on this step.';
     const result = {
       success: false,
-      data: { tableau_copy: { valid: false, error: 'Invalid Tableau URL — must be from dub01.online.tableau.com/site/logivice' } },
+      data: { tableau_copy: { valid: false, error: `Invalid Tableau URL — ${diagnostic}` } },
       errors: ['Invalid Tableau URL'],
       warnings: [],
       executedSteps: [step.id]

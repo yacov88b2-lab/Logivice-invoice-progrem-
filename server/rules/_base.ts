@@ -80,16 +80,29 @@ export function forceArray<T>(value: T | T[] | undefined | null): T[] {
 
 // Parse a Tableau Online view URL. Rejects any domain that is not dub01.online.tableau.com
 // or any site that is not logivice.
-// Expected: https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName
+// Supports both hash-routing and path-routing Tableau URL formats:
+//   https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName
+//   https://dub01.online.tableau.com/t/logivice/views/WorkbookName/ViewName
 export function parseTableauViewUrl(url: string): { workbook: string; view: string } | null {
   try {
-    const u = new URL(url);
+    const u = new URL(url.trim());
     if (u.hostname !== 'dub01.online.tableau.com') return null;
-    const fragment = u.hash;
-    const m = fragment.match(/#\/site\/([^/]+)\/views\/([^/]+)\/([^/?#]+)/);
-    if (!m) return null;
-    if (m[1] !== 'logivice') return null;
-    return { workbook: decodeURIComponent(m[2]), view: decodeURIComponent(m[3]) };
+
+    // Try hash-routing format first: #/site/SITE/views/WB/VIEW
+    const hashM = u.hash.match(/#\/site\/([^/]+)\/views\/([^/]+)\/([^/?#]+)/);
+    if (hashM) {
+      if (hashM[1] !== 'logivice') return null;
+      return { workbook: decodeURIComponent(hashM[2]), view: decodeURIComponent(hashM[3]) };
+    }
+
+    // Fallback: path-routing format: /t/SITE/views/WB/VIEW
+    const pathM = u.pathname.match(/\/t\/([^/]+)\/views\/([^/]+)\/([^/?#]+)/);
+    if (pathM) {
+      if (pathM[1] !== 'logivice') return null;
+      return { workbook: decodeURIComponent(pathM[2]), view: decodeURIComponent(pathM[3]) };
+    }
+
+    return null;
   } catch {
     return null;
   }

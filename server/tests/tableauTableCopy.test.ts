@@ -43,6 +43,24 @@ describe('parseTableauViewUrl', () => {
   it('rejects a plain non-URL string', () => {
     expect(parseTableauViewUrl('not-a-url')).toBeNull();
   });
+
+  it('trims leading/trailing whitespace before parsing', () => {
+    const result = parseTableauViewUrl(
+      '  https://dub01.online.tableau.com/#/site/logivice/views/MyWorkbook/MyView  '
+    );
+    expect(result).toEqual({ workbook: 'MyWorkbook', view: 'MyView' });
+  });
+
+  it('accepts path-routing format /t/logivice/views/WB/VIEW', () => {
+    const result = parseTableauViewUrl(
+      'https://dub01.online.tableau.com/t/logivice/views/SensosNLBilling/Storage'
+    );
+    expect(result).toEqual({ workbook: 'SensosNLBilling', view: 'Storage' });
+  });
+
+  it('rejects path-routing format with wrong site', () => {
+    expect(parseTableauViewUrl('https://dub01.online.tableau.com/t/othercorp/views/X/Y')).toBeNull();
+  });
 });
 
 // ── RuleEngine: tableau_table_copy step type ──────────────────────────────────
