@@ -6,13 +6,18 @@ import { toast } from '../../toast';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type WizardStep = 'name' | 'intent' | 'configure' | 'review';
-type RuleIntent = 'match' | 'filter' | 'transform' | 'combine' | 'other';
+type RuleIntent = 'match' | 'filter' | 'transform' | 'combine' | 'other' | 'tableau_copy';
 
 interface WizardState {
   ruleName: string;
   notes: string;
   referenceUrl: string;
   intent: RuleIntent | null;
+  // Tableau copy
+  tableauUrl: string;
+  tableauViewName: string;
+  tableauTargetSheet: string;
+  tableauUrlValidated: boolean | null;
   enabled: boolean;
   // Match
   matchField: string;
@@ -40,6 +45,10 @@ const DEFAULT_STATE: WizardState = {
   notes: '',
   referenceUrl: '',
   intent: null,
+  tableauUrl: '',
+  tableauViewName: '',
+  tableauTargetSheet: '',
+  tableauUrlValidated: null,
   enabled: true,
   matchField: '',
   matchCustomField: '',
@@ -312,6 +321,12 @@ const INTENTS: { id: RuleIntent; icon: string; title: string; desc: string }[] =
     title: 'Other / Custom',
     desc: 'Name the rule and add steps manually — useful for one-off or copy-pasted Tableau rules',
   },
+  {
+    id: 'tableau_copy',
+    icon: '📊',
+    title: 'Copy table from Tableau',
+    desc: 'Fetch a Tableau view and add it as a raw sheet in the generated workbook',
+  },
 ];
 
 function IntentStep({
@@ -367,7 +382,8 @@ function ConfigureStep({
       {state.intent === 'filter'    && <FilterConfig    state={state} update={update} />}
       {state.intent === 'transform' && <TransformConfig state={state} update={update} />}
       {state.intent === 'combine'   && <CombineConfig   state={state} update={update} />}
-      {state.intent === 'other'     && <OtherConfig     state={state} update={update} customerId={customerId} />}
+      {state.intent === 'other'        && <OtherConfig        state={state} update={update} customerId={customerId} />}
+      {state.intent === 'tableau_copy' && <TableauCopyConfig  state={state} update={update} />}
     </div>
   );
 }
@@ -872,6 +888,129 @@ function OtherConfig({
   );
 }
 
+// ─── Tableau Copy Config ──────────────────────────────────────────────────────
+
+function TableauCopyConfig({
+  state, update,
+}: {
+  state: WizardState;
+  update: (p: Partial<WizardState>) => void;
+}) {
+  const [validating, setValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<any>(null);
+
+  const handleValidate = async () => {
+    if (!state.tableauUrl.trim()) return;
+    setValidating(true);
+    setValidationResult(null);
+    try {
+      const result = await api.validateTableauUrl(state.tableauUrl.trim());
+      setValidationResult(result);
+      if (result.valid && result.view) {
+        update({
+          tableauViewName: result.view,
+          tableauTargetSheet: state.tableauTargetSheet || result.view,
+          tableauUrlValidated: true,
+        });
+      } else {
+        update({ tableauUrlValidated: !result.valid ? false : null });
+      }
+    } catch {
+      setValidationResult({ valid: false, error: 'Validation request failed' });
+      update({ tableauUrlValidated: false });
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <label className="block text-sm font-semibold text-slate-700">Tableau View URL *</label>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Paste the full Tableau URL. Must be from{' '}
+          <span className="font-mono">dub01.online.tableau.com</span>, site{' '}
+          <span className="font-mono">logivice</span>.
+        </p>
+        <div className="mt-2 flex gap-2">
+          <input
+            type="url"
+            value={state.tableauUrl}
+            onChange={e => {
+              update({ tableauUrl: e.target.value, tableauUrlValidated: null });
+              setValidationResult(null);
+            }}
+            placeholder="https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName"
+            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+          />
+          <button
+            type="button"
+            onClick={handleValidate}
+            disabled={!state.tableauUrl.trim() || validating}
+            className="rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-40"
+          >
+            {validating ? 'Checking…' : 'Validate'}
+          </button>
+        </div>
+      </div>
+
+      {validationResult && (
+        <div className={`rounded-lg border p-3 text-sm ${
+          !validationResult.valid
+            ? 'border-red-200 bg-red-50 text-red-700'
+            : validationResult.viewFound
+              ? 'border-green-200 bg-green-50'
+              : 'border-amber-200 bg-amber-50'
+        }`}>
+          {!validationResult.valid && (
+            <p className="text-sm text-red-700">{validationResult.error}</p>
+          )}
+          {validationResult.valid && validationResult.viewFound && (
+            <>
+              <p className="font-semibold text-green-800">✓ View confirmed in Tableau</p>
+              <p className="mt-1 text-xs text-green-700">
+                Workbook: <span className="font-mono">{validationResult.workbook}</span> · View: <span className="font-mono">{validationResult.view}</span>
+              </p>
+              {validationResult.rowCount !== undefined && (
+                <p className="text-xs text-green-700">
+                  {validationResult.rowCount} rows · {validationResult.columns?.length} columns
+                  {validationResult.columns?.length > 0 && `: ${validationResult.columns.slice(0, 4).join(', ')}${validationResult.columns.length > 4 ? ` +${validationResult.columns.length - 4} more` : ''}`}
+                </p>
+              )}
+            </>
+          )}
+          {validationResult.valid && !validationResult.viewFound && (
+            <>
+              <p className="font-semibold text-amber-800">URL format valid</p>
+              <p className="mt-1 text-xs text-amber-700">{validationResult.warning ?? 'View could not be confirmed via Tableau API.'}</p>
+            </>
+          )}
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700">Sheet name in output *</label>
+        <input
+          type="text"
+          value={state.tableauTargetSheet}
+          onChange={e => update({ tableauTargetSheet: e.target.value })}
+          placeholder={state.tableauViewName || 'Tableau Data'}
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          A new sheet with this name is added to the generated Excel file.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+        <span className="font-semibold text-slate-700">Phase 1 — raw sheet mode.</span>{' '}
+        The Tableau view is copied as a new sheet (raw data, all rows). Writing into a specific cell
+        range is planned for a future phase.
+      </div>
+    </div>
+  );
+}
+
 // ─── Step: Review ─────────────────────────────────────────────────────────────
 
 function ReviewStep({
@@ -1035,6 +1174,9 @@ function describeRule(state: WizardState, customerId: string): string {
         ? `For ${customerId}: custom rule — ${state.notes}`
         : `For ${customerId}: custom rule — steps to be defined manually in the Rule Builder.`;
 
+    case 'tableau_copy':
+      return `For ${customerId}: copies Tableau view "${state.tableauViewName || state.tableauUrl}" into the generated workbook as a new sheet named "${state.tableauTargetSheet || state.tableauViewName || 'Tableau Data'}".`;
+
     default:
       return 'No purpose selected.';
   }
@@ -1063,8 +1205,9 @@ function isConfigValid(state: WizardState): boolean {
     case 'filter':    return state.filterField.trim().length > 0 && state.filterValue.trim().length > 0;
     case 'transform': return state.transformField.trim().length > 0;
     case 'combine':   return state.combineField.trim().length > 0;
-    case 'other':     return true;
-    default:          return false;
+    case 'other':        return true;
+    case 'tableau_copy': return state.tableauUrl.trim().length > 0;
+    default:             return false;
   }
 }
 
@@ -1136,6 +1279,22 @@ function wizardToRule(
       ruleType = 'matching';
       steps = state.suggestedSteps ?? [];
       break;
+
+    case 'tableau_copy':
+      ruleType = 'matching';
+      steps = [{
+        id: `step_${t}`,
+        type: 'tableau_table_copy' as any,
+        enabled: true,
+        config: {
+          url: state.tableauUrl,
+          viewName: state.tableauViewName || state.tableauUrl,
+          mode: 'raw_sheet',
+          targetSheet: state.tableauTargetSheet || state.tableauViewName || 'Tableau Data',
+          includeHeaders: true,
+        },
+      }];
+      break;
   }
 
   const description = [
@@ -1203,6 +1362,12 @@ function ruleToWizard(rule: CustomerRuleDefinition): WizardState {
     base.intent = 'combine';
     base.combineField = s0.config.groupBy ?? '';
     base.combineOperation = s0.config.operation ?? 'sum';
+  } else if (s0.type === 'tableau_table_copy') {
+    base.intent = 'tableau_copy';
+    base.tableauUrl = s0.config.url ?? '';
+    base.tableauViewName = s0.config.viewName ?? '';
+    base.tableauTargetSheet = s0.config.targetSheet ?? '';
+    base.tableauUrlValidated = null;
   } else {
     base.intent = 'other';
   }

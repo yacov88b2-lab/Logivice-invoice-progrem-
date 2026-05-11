@@ -235,6 +235,27 @@ export const api = {
     return res.json();
   },
 
+  // Tableau URL validation — structural check + best-effort view lookup
+  validateTableauUrl: async (url: string) => {
+    const res = await fetch(`${API_BASE}/rules/validate-tableau-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    return res.json() as Promise<{
+      valid: boolean;
+      urlParsed?: boolean;
+      viewFound?: boolean | null;
+      workbook?: string;
+      view?: string;
+      columns?: string[];
+      sampleRows?: string[][];
+      rowCount?: number;
+      error?: string;
+      warning?: string;
+    }>;
+  },
+
   // Rule Assistant
   suggestRuleSteps: async (customerId: string, description: string, sampleTransactions?: unknown[]) => {
     const res = await fetch(`${API_BASE}/rules/assistant/suggest`, {
@@ -242,7 +263,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ customer_id: customerId, description, sample_transactions: sampleTransactions }),
     });
-    if (!res.ok) throw new Error(await getErrorMessage(res, 'Rule assistant request failed'));
+    if (!res.ok) {
+      if (res.status === 503) throw new Error('503');
+      throw new Error(await getErrorMessage(res, 'Rule assistant request failed'));
+    }
     return res.json() as Promise<{ steps: unknown[]; explanation: string }>;
   },
 

@@ -140,7 +140,7 @@ export function PricelistManager() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {deployStatus.canDeploy && (
+          {import.meta.env.VITE_SHOW_DEPLOY === 'true' && deployStatus.canDeploy && (
             <button
               onClick={handleDeploy}
               disabled={deployStatus.loading}

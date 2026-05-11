@@ -84,6 +84,11 @@ function LifecycleBadge({ rule }: { rule: CustomerRuleDefinition }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+const isTestEntry = (name: string) => {
+  const tokens = name.replace(/([a-z])([A-Z])/g, '$1 $2').split(/[^a-zA-Z]+/);
+  return tokens.some(t => /^(qa|test|smoke)$/i.test(t));
+};
+
 export function CustomerRules() {
   const [rules, setRules] = useState<CustomerRuleDefinition[]>([]);
   const [pricelists, setPricelists] = useState<Pricelist[]>([]);
@@ -92,17 +97,21 @@ export function CustomerRules() {
   const [mode, setMode] = useState<ViewMode>('list');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showTestData, setShowTestData] = useState(false);
 
   const customers = Array.from(
     new Set([
       ...pricelists.map(p => p.customer_name).filter(Boolean),
       ...rules.map(r => r.customer_id).filter(Boolean),
     ])
-  ).sort((a, b) => a.localeCompare(b));
+  )
+    .filter(c => showTestData || !isTestEntry(c))
+    .sort((a, b) => a.localeCompare(b));
 
-  const filteredRules = selectedCustomer
+  const filteredRules = (selectedCustomer
     ? rules.filter(rule => rule.customer_id === selectedCustomer)
-    : rules;
+    : rules
+  ).filter(rule => showTestData || !isTestEntry(rule.customer_id));
 
   const loadData = async () => {
     try {
@@ -278,6 +287,10 @@ export function CustomerRules() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button type="button" onClick={() => setShowTestData(v => !v)}
+            className={`rounded border px-3 py-2 text-xs font-semibold transition-colors ${showTestData ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-500 hover:bg-slate-50'}`}>
+            {showTestData ? 'Hide test data' : 'Show test data'}
+          </button>
           <button type="button" onClick={() => setMode('assistant')}
             className="rounded border border-[#28258b]/30 bg-[#28258b]/10 px-4 py-2 text-sm font-semibold text-[#28258b] hover:bg-[#28258b]/15">
             AI Assistant

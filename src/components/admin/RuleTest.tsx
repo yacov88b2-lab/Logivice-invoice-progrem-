@@ -120,7 +120,161 @@ function buildBanner(result: any): Banner | null {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+// ── Tableau copy test panel ───────────────────────────────────────────────────
+
+function TableauCopyTestPanel({ rule, onMarkedTested }: RuleTestProps) {
+  const [result, setResult] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [markingTested, setMarkingTested] = useState(false);
+
+  const step = rule.steps.find((s: any) => s.type === 'tableau_table_copy');
+  const url: string = step?.config?.url ?? '';
+  const targetSheet: string = step?.config?.targetSheet ?? 'Tableau Data';
+
+  const runCheck = async () => {
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await api.testRule(rule.id!, { transaction: {}, lineItems: [] });
+      setResult(res);
+    } catch (err) {
+      toast.error(`Test failed: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMarkTested = async () => {
+    setMarkingTested(true);
+    try {
+      await api.markRuleTested(rule.id!);
+      toast.success('Marked as tested — an admin can now approve this rule.');
+      onMarkedTested?.();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setMarkingTested(false);
+    }
+  };
+
+  const tc = result?.data?.tableau_copy;
+  const success = result?.success === true && tc?.valid;
+  const canMarkTested = rule.approval_status === 'draft' && success;
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tableau view URL</p>
+        <p className="mt-1 break-all font-mono text-sm text-[#28258b]">{url || '(none set)'}</p>
+        <p className="mt-2 text-xs text-slate-500">
+          Target sheet in output: <span className="font-semibold text-slate-700">{targetSheet}</span>
+        </p>
+        <p className="mt-1 text-xs text-slate-500">Mode: raw sheet (Phase 1)</p>
+      </div>
+
+      <button
+        type="button"
+        onClick={runCheck}
+        disabled={loading || !url}
+        className="rounded-lg bg-[#28258b] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
+      >
+        {loading ? 'Checking Tableau…' : 'Validate URL & fetch sample data'}
+      </button>
+
+      {result && (
+        <div className="space-y-4">
+          <div className={`rounded-xl border p-4 ${
+            !tc?.valid ? 'border-red-200 bg-red-50' :
+            tc?.viewFound ? 'border-green-200 bg-green-50' :
+            'border-amber-200 bg-amber-50'
+          }`}>
+            {!tc?.valid && (
+              <>
+                <p className="font-semibold text-red-800">✗ Invalid URL</p>
+                <p className="mt-1 text-sm text-red-700">{tc?.error}</p>
+              </>
+            )}
+            {tc?.valid && tc?.viewFound && (
+              <>
+                <p className="font-semibold text-green-800">✓ View found in Tableau</p>
+                <p className="mt-1 text-xs text-green-700">
+                  Workbook: <span className="font-mono">{tc.workbook}</span> · View: <span className="font-mono">{tc.view}</span>
+                </p>
+                <p className="mt-0.5 text-xs text-green-700">
+                  {tc.totalRows} rows · {tc.columns?.length} columns · target sheet: <span className="font-semibold">{tc.targetSheet}</span>
+                </p>
+              </>
+            )}
+            {tc?.valid && !tc?.viewFound && (
+              <>
+                <p className="font-semibold text-amber-800">⚠ URL valid — view not confirmed</p>
+                <p className="mt-1 text-xs text-amber-700">{tc?.warning}</p>
+              </>
+            )}
+          </div>
+
+          {tc?.viewFound && tc?.columns?.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Sample data ({tc.sampleRows?.length ?? 0} of {tc.totalRows} rows)
+              </p>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr>
+                      {tc.columns.slice(0, 6).map((col: string) => (
+                        <th key={col} className="border border-slate-200 bg-slate-100 px-2 py-1 text-left font-semibold text-slate-700">
+                          {col}
+                        </th>
+                      ))}
+                      {tc.columns.length > 6 && <th className="border border-slate-200 bg-slate-100 px-2 py-1 text-slate-400">+{tc.columns.length - 6} more</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(tc.sampleRows ?? []).map((row: string[], i: number) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        {row.slice(0, 6).map((cell: string, j: number) => (
+                          <td key={j} className="border border-slate-200 px-2 py-1 text-slate-700">{cell}</td>
+                        ))}
+                        {row.length > 6 && <td className="border border-slate-200 px-2 py-1 text-slate-400">…</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {canMarkTested && (
+            <div className="rounded-xl border border-[#28258b]/20 bg-[#28258b]/5 p-4">
+              <p className="text-sm font-semibold text-slate-800">Ready to mark as tested?</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                URL is valid and view was found. Marking tested unlocks the Approve action.
+              </p>
+              <button
+                type="button"
+                onClick={handleMarkTested}
+                disabled={markingTested}
+                className="mt-3 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+              >
+                {markingTested ? 'Saving…' : 'Mark as Tested'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main test component ───────────────────────────────────────────────────────
+
 export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
+  // Route tableau_table_copy rules to their own panel
+  if (rule.steps.some((s: any) => s.type === 'tableau_table_copy')) {
+    return <TableauCopyTestPanel rule={rule} onMarkedTested={onMarkedTested} />;
+  }
+
   const [tx, setTx] = useState<TxForm>({ ...DEFAULT_TX });
   const [lineItems, setLineItems] = useState<LIForm[]>([{ ...BLANK_LI }]);
   const [result, setResult] = useState<any | null>(null);

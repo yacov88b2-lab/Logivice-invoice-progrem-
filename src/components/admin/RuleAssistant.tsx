@@ -25,7 +25,12 @@ export function RuleAssistant({ customerId, onSaved, onCancel }: Props) {
       setResult(data);
       if (!ruleName) setRuleName(`AI Rule — ${description.trim().slice(0, 40)}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Request failed');
+      const msg = err instanceof Error ? err.message : 'Request failed';
+      setError(
+        msg.includes('503') || msg.toLowerCase().includes('service unavailable')
+          ? 'Rule Assistant is currently unavailable. Use the manual wizard below.'
+          : msg
+      );
     } finally {
       setLoadingSuggest(false);
     }

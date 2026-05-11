@@ -8,7 +8,8 @@ export type RuleStepType =
   | 'fuzzy_match'
   | 'filter'
   | 'aggregate'
-  | 'conditional';
+  | 'conditional'
+  | 'tableau_table_copy';
 
 export interface RuleStep {
   id: string;
@@ -155,6 +156,9 @@ export class RuleEngine {
         return this.executeAggregate(step, context);
       case 'conditional':
         return this.executeConditional(step, context);
+      case 'tableau_table_copy':
+        // Executed at the workbook level by the invoice generator, not per-transaction.
+        return { data: { tableau_copy_deferred: true }, errors: [], warnings: ['tableau_table_copy runs at workbook level — applied after invoice fill'] };
       default:
         throw new Error(`Unknown step type: ${step.type}`);
     }

@@ -1,6 +1,8 @@
 import express from 'express';
 import { CustomerRuleModel } from '../../models/CustomerRule';
 import { RuleEngine, type CustomerRuleDefinition, type RuleEvaluationContext } from '../../services/RuleEngine';
+import { TableauAPIClient } from '../../services/tableauAPI';
+import { parseTableauViewUrl } from '../../rules/_base';
 import db from '../../db';
 
 const router = express.Router();
@@ -146,7 +148,10 @@ router.patch('/:id/toggle', (req, res) => {
       return res.status(404).json({ error: 'Rule not found' });
     }
 
-    // Disable other rules for same customer if enabling this one
+    // Disable conflicting rules for same customer if enabling this one.
+    // A "tableau-only" rule (all steps are tableau_table_copy) can coexist with a
+    // matching/transformation rule; they serve different purposes and don't conflict.
+    // Only disable rules of the same class (matching vs matching, tableau-only vs tableau-only).
     if (enabled === true) {
       if (rule.approval_status !== 'approved') {
         return res.status(400).json({
@@ -155,11 +160,22 @@ router.patch('/:id/toggle', (req, res) => {
         });
       }
 
+      const enabledSteps = rule.steps.filter((s: any) => s.enabled !== false);
+      const thisIsTableauOnly = enabledSteps.length > 0 &&
+        enabledSteps.every((s: any) => s.type === 'tableau_table_copy');
+
       const other = CustomerRuleModel.getByCustomer(rule.customer_id)
         .filter(r => r.id !== rule.id && r.enabled);
 
       for (const otherRule of other) {
-        CustomerRuleModel.update(otherRule.id, { enabled: false, updated_by: updated_by || 'admin' });
+        const otherEnabledSteps = otherRule.steps.filter((s: any) => s.enabled !== false);
+        const otherIsTableauOnly = otherEnabledSteps.length > 0 &&
+          otherEnabledSteps.every((s: any) => s.type === 'tableau_table_copy');
+
+        // Only disable rules of the same class to avoid removing a coexisting rule
+        if (thisIsTableauOnly === otherIsTableauOnly) {
+          CustomerRuleModel.update(otherRule.id, { enabled: false, updated_by: updated_by || 'admin' });
+        }
       }
     }
 
@@ -179,6 +195,12 @@ router.post('/:id/test', async (req, res) => {
 
     if (!rule) {
       return res.status(404).json({ error: 'Rule not found' });
+    }
+
+    // tableau_table_copy steps are workbook-level — route to dedicated handler
+    const tableauStep = rule.steps.find(s => s.enabled !== false && s.type === 'tableau_table_copy');
+    if (tableauStep) {
+      return handleTableauCopyTest(rule, tableauStep, req.params.id, res);
     }
 
     // Execute rule — bypass the enabled guard so draft rules can be tested
@@ -293,7 +315,7 @@ router.patch('/:id/revert-to-draft', (req, res) => {
 
 const VALID_STEP_TYPES = new Set([
   'field_extraction', 'field_transform', 'match_transaction',
-  'fuzzy_match', 'filter', 'aggregate', 'conditional'
+  'fuzzy_match', 'filter', 'aggregate', 'conditional', 'tableau_table_copy'
 ]);
 
 function validateAssistantSteps(steps: any[]): string[] {
@@ -321,9 +343,115 @@ function validateAssistantSteps(steps: any[]): string[] {
       if (!s.config.sourceKey) errors.push(`${p}: aggregate requires sourceKey`);
       if (!s.config.outputKey) errors.push(`${p}: aggregate requires outputKey`);
       if (!s.config.operation) errors.push(`${p}: aggregate requires operation`);
+    } else if (s.type === 'tableau_table_copy') {
+      if (!s.config.url) errors.push(`${p}: tableau_table_copy requires url`);
+      if (!s.config.mode) errors.push(`${p}: tableau_table_copy requires mode`);
+      const parsed = s.config.url ? parseTableauViewUrl(s.config.url) : null;
+      if (s.config.url && !parsed) errors.push(`${p}: tableau_table_copy url must be from dub01.online.tableau.com/site/logivice`);
     }
   }
   return errors;
+}
+
+// Validate a Tableau view URL: structural check + best-effort Tableau API verification.
+router.post('/validate-tableau-url', async (req, res) => {
+  const { url } = req.body;
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ valid: false, error: 'url is required' });
+  }
+
+  const parsed = parseTableauViewUrl(url);
+  if (!parsed) {
+    return res.json({
+      valid: false,
+      error: 'URL must be from dub01.online.tableau.com, site "logivice". Expected: https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName'
+    });
+  }
+
+  // Best-effort: try to confirm via Tableau API
+  try {
+    const client = new TableauAPIClient();
+    const viewData = await client.findViewByName(parsed.workbook, parsed.view);
+    if (!viewData) {
+      return res.json({
+        valid: true, urlParsed: true, viewFound: false,
+        workbook: parsed.workbook, view: parsed.view,
+        warning: 'URL structure is valid but the view could not be found via Tableau API. Check workbook/view names or credentials.'
+      });
+    }
+    const sampleRows = viewData.rows.slice(0, 5).map(row =>
+      viewData.columns.map(c => String(row[c] ?? ''))
+    );
+    return res.json({
+      valid: true, viewFound: true,
+      workbook: parsed.workbook, view: parsed.view,
+      columns: viewData.columns, sampleRows, rowCount: viewData.rows.length
+    });
+  } catch (err) {
+    return res.json({
+      valid: true, urlParsed: true, viewFound: null,
+      workbook: parsed.workbook, view: parsed.view,
+      warning: 'URL structure is valid. Tableau API check skipped: ' + (err as Error).message
+    });
+  }
+});
+
+// Helper: run rule test for a tableau_table_copy step (not per-transaction).
+async function handleTableauCopyTest(
+  rule: CustomerRuleDefinition,
+  step: any,
+  ruleId: string,
+  res: any
+) {
+  const url: string = step.config?.url ?? '';
+  const parsed = parseTableauViewUrl(url);
+
+  if (!parsed) {
+    const result = {
+      success: false,
+      data: { tableau_copy: { valid: false, error: 'Invalid Tableau URL — must be from dub01.online.tableau.com/site/logivice' } },
+      errors: ['Invalid Tableau URL'],
+      warnings: [],
+      executedSteps: [step.id]
+    };
+    db.prepare(`INSERT INTO rule_test_runs (rule_id, test_data, result, result_data, status, passed, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(ruleId, '{}', JSON.stringify(result), JSON.stringify(result.data), 'failed', 0, 'system');
+    return res.json(result);
+  }
+
+  let viewData: Awaited<ReturnType<TableauAPIClient['findViewByName']>>;
+  try {
+    const client = new TableauAPIClient();
+    viewData = await client.findViewByName(parsed.workbook, parsed.view);
+  } catch {
+    viewData = null;
+  }
+
+  const found = viewData !== null;
+  const data = found && viewData ? {
+    tableau_copy: {
+      valid: true, viewFound: true,
+      workbook: parsed.workbook, view: parsed.view,
+      columns: viewData.columns,
+      sampleRows: viewData.rows.slice(0, 5).map(row => viewData!.columns.map(c => String(row[c] ?? ''))),
+      totalRows: viewData.rows.length,
+      targetSheet: step.config.targetSheet || parsed.view,
+      mode: step.config.mode || 'raw_sheet'
+    }
+  } : {
+    tableau_copy: {
+      valid: true, urlParsed: true, viewFound: false,
+      workbook: parsed.workbook, view: parsed.view,
+      warning: 'URL structure is valid but view could not be fetched. Check Tableau credentials or workbook/view name.'
+    }
+  };
+
+  const testStatus = found ? 'passed' : 'failed';
+  const result = { success: found, data, errors: found ? [] : ['View not found in Tableau'], warnings: [], executedSteps: [step.id] };
+  db.prepare(`INSERT INTO rule_test_runs (rule_id, test_data, result, result_data, status, passed, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(ruleId, JSON.stringify({ tableau_copy: true, url }), JSON.stringify(result), JSON.stringify(data), testStatus, found ? 1 : 0, 'system');
+
+  return res.json(result);
 }
 
 // Rule Assistant: suggest rule steps from a natural-language description

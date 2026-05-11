@@ -9,12 +9,18 @@ interface PricelistListProps {
   refreshTrigger: number;
 }
 
+const isTestEntry = (name: string) => {
+  const tokens = name.replace(/([a-z])([A-Z])/g, '$1 $2').split(/[^a-zA-Z]+/);
+  return tokens.some(t => /^(qa|test|smoke)$/i.test(t));
+};
+
 export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistListProps) {
   const [pricelists, setPricelists] = useState<Pricelist[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [showTestData, setShowTestData] = useState(false);
 
   const fetchPricelists = useCallback(async () => {
     try {
@@ -77,8 +83,16 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
     );
   }
 
+  const visiblePricelists = pricelists.filter(p => showTestData || !isTestEntry(p.customer_name || ''));
+
   return (
     <div className="overflow-x-auto">
+      <div className="flex justify-end px-4 pt-3">
+        <button type="button" onClick={() => setShowTestData(v => !v)}
+          className={`rounded border px-3 py-1.5 text-xs font-semibold transition-colors ${showTestData ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-500 hover:bg-slate-50'}`}>
+          {showTestData ? 'Hide test data' : 'Show test data'}
+        </button>
+      </div>
       {confirmDeleteId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded bg-white shadow-lg">
@@ -125,7 +139,7 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
           </tr>
         </thead>
         <tbody>
-          {pricelists.map((p) => (
+          {visiblePricelists.map((p) => (
             <tr key={p.id} className="border-b border-slate-200 hover:bg-slate-50">
               <td className="p-4 font-semibold text-slate-950">{p.name}</td>
               <td className="p-4">{p.customer_name}</td>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '../../api';
-import type { Pricelist, PreviewResponse, GenerateResponse, RuleDiagnostic } from '../../types';
+import type { Pricelist, PreviewResponse, GenerateResponse, RuleDiagnostic, TableauCopyResult } from '../../types';
 
 export function UserDashboard() {
   const [pricelists, setPricelists] = useState<Pricelist[]>([]);
@@ -492,6 +492,11 @@ export function UserDashboard() {
                 />
               </label>
             </div>
+            {billingCycle === 'custom' && (
+              <p className="mt-2 text-xs text-slate-500">
+                For a quick first check, use a short range (a few days). Full-month runs query Tableau and may take 30–60 seconds.
+              </p>
+            )}
 
             {loadingPricelists && (
               <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
@@ -905,6 +910,10 @@ export function UserDashboard() {
             </div>
           )}
 
+          {result.tableauCopyResults && result.tableauCopyResults.length > 0 && (
+            <TableauCopiedSheetsPanel results={result.tableauCopyResults} />
+          )}
+
           <div className="flex flex-col gap-3 sm:flex-row">
             <button
               type="button"
@@ -1182,6 +1191,80 @@ function ReviewQueuePanel({
           ? 'Updating preview…'
           : `Confirm ${resolvedCount} selection${resolvedCount !== 1 ? 's' : ''} & update preview`}
       </button>
+    </section>
+  );
+}
+
+function TableauCopiedSheetsPanel({ results }: { results: TableauCopyResult[] }) {
+  const hasIssues = results.some(r => r.status === 'failed' || r.status === 'skipped');
+
+  return (
+    <section className="rounded border border-slate-200 bg-white p-4 space-y-3">
+      <h4 className="font-semibold text-slate-950">Tableau Copied Sheets</h4>
+
+      {hasIssues && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+          <span className="font-semibold">Warning:</span> The invoice file was generated, but one or more Tableau copy steps did not complete successfully. Download the invoice and verify the affected sheets manually.
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {results.map((r, i) => {
+          const isCopied  = r.status === 'copied';
+          const isSkipped = r.status === 'skipped';
+
+          const rowCls = isCopied
+            ? 'border-green-200 bg-green-50'
+            : isSkipped
+            ? 'border-amber-200 bg-amber-50'
+            : 'border-red-200 bg-red-50';
+
+          const iconCls = isCopied
+            ? 'text-green-700'
+            : isSkipped
+            ? 'text-amber-700'
+            : 'text-red-700';
+
+          const labelCls = isCopied
+            ? 'text-green-800'
+            : isSkipped
+            ? 'text-amber-800'
+            : 'text-red-800';
+
+          const detailCls = isCopied
+            ? 'text-green-700'
+            : isSkipped
+            ? 'text-amber-700'
+            : 'text-red-700';
+
+          const badgeCls = isCopied
+            ? 'bg-green-100 text-green-700'
+            : isSkipped
+            ? 'bg-amber-100 text-amber-700'
+            : 'bg-red-100 text-red-700';
+
+          const icon = isCopied ? '✓' : isSkipped ? '⚠' : '✕';
+
+          const detail = isCopied
+            ? `${r.rowsCopied ?? 0} rows copied`
+            : isSkipped
+            ? `Skipped — ${r.error ?? 'unknown reason'}`
+            : `Failed — ${r.error ?? 'unknown error'}`;
+
+          return (
+            <div key={i} className={`flex items-start gap-3 rounded border px-3 py-2.5 text-sm ${rowCls}`}>
+              <span className={`mt-0.5 shrink-0 font-bold ${iconCls}`}>{icon}</span>
+              <div className="min-w-0 flex-1">
+                <div className={`font-semibold ${labelCls}`}>{r.sheetName}</div>
+                <div className={`mt-0.5 text-xs ${detailCls}`}>{detail}</div>
+              </div>
+              <span className={`ml-auto mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${badgeCls}`}>
+                {r.status}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

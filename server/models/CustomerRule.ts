@@ -57,13 +57,32 @@ export class CustomerRuleModel {
 
   static getActiveByCustomer(customerId: string): CustomerRuleDefinition | undefined {
     const stmt = db.prepare(`
-      SELECT * FROM customer_rules 
+      SELECT * FROM customer_rules
       WHERE customer_id = ? AND enabled = 1 AND approval_status = 'approved'
-      ORDER BY version DESC 
+      ORDER BY version DESC
       LIMIT 1
     `);
     const row = stmt.get(customerId) as any;
     return row ? this.rowToRule(row) : undefined;
+  }
+
+  static getAllActiveByCustomer(customerId: string): CustomerRuleDefinition[] {
+    const stmt = db.prepare(`
+      SELECT * FROM customer_rules
+      WHERE customer_id = ? AND enabled = 1 AND approval_status = 'approved'
+      ORDER BY version DESC
+    `);
+    const rows = stmt.all(customerId) as any[];
+    return rows.map(r => this.rowToRule(r));
+  }
+
+  // Returns the active rule that has at least one non-tableau-copy step (matching/transformation logic).
+  // Skips tableau-only rules so they don't pollute rule-engine match diagnostics.
+  static getActiveMatchingByCustomer(customerId: string): CustomerRuleDefinition | undefined {
+    const all = this.getAllActiveByCustomer(customerId);
+    return all.find(rule =>
+      rule.steps.some(s => s.enabled !== false && s.type !== 'tableau_table_copy')
+    );
   }
 
   static getAll(): CustomerRuleDefinition[] {

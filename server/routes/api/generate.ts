@@ -9,6 +9,7 @@ import { ExcelDataExtractor } from '../../services/excelDataExtractor';
 import { DataMapper } from '../../services/dataMapper';
 import { fillInvoice, extractAfimilkStoragePeriod } from '../../rules/index';
 import { pricelistStorage } from '../../services/pricelistStorage';
+import { applyTableauCopyRules } from '../../services/tableauCopyService';
 import { CustomerRuleModel } from '../../models/CustomerRule';
 import { RuleEngine } from '../../services/RuleEngine';
 
@@ -22,7 +23,7 @@ async function applyRuleOverrides(
   unmatchedItems: any[],
   templateStructure: any
 ): Promise<any[]> {
-  const activeRule = CustomerRuleModel.getActiveByCustomer(customerName);
+  const activeRule = CustomerRuleModel.getActiveMatchingByCustomer(customerName);
   if (!activeRule || unmatchedItems.length === 0) return [];
 
   const lineItems = getInvoiceLineItems(templateStructure);
@@ -54,6 +55,7 @@ async function applyRuleOverrides(
   return additionalMatches;
 }
 
+
 function getInvoiceLineItems(templateStructure: any) {
   const lineItems: any[] = [];
   for (const sheet of templateStructure?.sheets || []) {
@@ -72,7 +74,7 @@ async function buildRuleDiagnostics(
   mapperMatches?: any[],
   mapperUnmatched?: any[]
 ) {
-  const activeRule = CustomerRuleModel.getActiveByCustomer(customerName);
+  const activeRule = CustomerRuleModel.getActiveMatchingByCustomer(customerName);
   if (!activeRule) {
     return {
       activeRule: null,
@@ -462,6 +464,9 @@ router.post('/invoice', async (req, res) => {
       expectedInboundPeriod
     );
 
+    // Apply tableau_table_copy rules (workbook-level, runs after the template is filled)
+    const tableauCopyResults = await applyTableauCopyRules(pricelist.customer_name, outputPath);
+
     const billingPeriod = isAfimilkBilling
       ? extractAfimilkStoragePeriod(rawViewData?.get('Storage') ?? [])
       : null;
@@ -546,6 +551,7 @@ router.post('/invoice', async (req, res) => {
       filledRows: fillResult.filledRows,
       errors: fillResult.errors,
       billingPeriod,
+      tableauCopyResults: tableauCopyResults.length > 0 ? tableauCopyResults : undefined,
       auditLogId: auditEntry.id,
       downloadUrl: `/api/generate/download/${auditEntry.id}`
     });

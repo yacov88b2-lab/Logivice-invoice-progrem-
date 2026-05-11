@@ -91,8 +91,17 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
     const customerPattern = customerTokens.join('[\\s-]+');
     const nameRegex = new RegExp(`^${customerPattern}\\s*[-]\\s*Template\\s+\\d{4}$`);
     if (!nameRegex.test(formData.name.trim())) {
-      setError('Pricelist name must use the format "Customer name - Template YYYY".');
+      const example = `${formData.customer_name} - Template ${new Date().getFullYear()}`;
+      setError(`Name format is wrong. Expected: "${example}"`);
       return;
+    }
+
+    if (file) {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (ext !== 'xlsx' && ext !== 'xls') {
+        setError('Only .xlsx or .xls files are accepted. Please select a valid Excel file.');
+        return;
+      }
     }
 
     if (!isEditing && !file) {
@@ -148,8 +157,16 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
-            placeholder="e.g., Afimilk - Template 2026"
+            placeholder="e.g., Sensos - Template 2026"
           />
+          {formData.customer_name && (
+            <p className="mt-1 text-xs text-slate-500">
+              Expected format:{' '}
+              <span className="font-mono font-medium text-slate-700">
+                {formData.customer_name} - Template {new Date().getFullYear()}
+              </span>
+            </p>
+          )}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -229,7 +246,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Excel File {isEditing ? '(leave empty to keep current)' : '*'}
+            Excel File {isEditing ? '' : '*'}
           </label>
           <input
             type="file"
@@ -237,9 +254,13 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             onChange={(e) => setFile(e.target.files?.[0] || null)}
             className="w-full rounded border border-slate-300 px-3 py-2 text-sm file:mr-4 file:rounded file:border-0 file:bg-[#28258b]/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#28258b] hover:file:bg-[#28258b]/15"
           />
-          <p className="text-sm text-gray-500 mt-1">
-            Upload an Excel file with invoice template structure
-          </p>
+          {file ? (
+            <p className="mt-1 text-sm font-medium text-[#28258b]">Selected: {file.name}</p>
+          ) : isEditing ? (
+            <p className="mt-1 text-sm text-amber-700 font-medium">No new file selected — existing Excel file will be kept.</p>
+          ) : (
+            <p className="text-sm text-gray-500 mt-1">Upload an Excel file with invoice template structure</p>
+          )}
         </div>
 
         {error && (

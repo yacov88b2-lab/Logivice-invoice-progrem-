@@ -176,6 +176,14 @@ export interface PreviewResponse {
   }>;
 }
 
+export interface TableauCopyResult {
+  stepId: string;
+  sheetName: string;
+  status: 'copied' | 'skipped' | 'failed';
+  rowsCopied?: number;
+  error?: string;
+}
+
 export interface GenerateResponse {
   success: boolean;
   pricelist: {
@@ -226,6 +234,7 @@ export interface GenerateResponse {
     mm: string;
     yyyy: string;
   } | null;
+  tableauCopyResults?: TableauCopyResult[];
   auditLogId: number;
   downloadUrl: string;
 }

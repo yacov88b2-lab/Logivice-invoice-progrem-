@@ -1014,6 +1014,74 @@ export class TableauAPIClient {
     const token = await this.authenticate();
     return token !== null;
   }
+
+  // Find a view by workbook name + view name (used by tableau_table_copy rule steps).
+  async findViewByName(workbookName: string, viewName: string): Promise<{
+    viewId: string;
+    workbookId: string;
+    columns: string[];
+    rows: Record<string, any>[];
+  } | null> {
+    try {
+      if (!this.authToken) await this.authenticate();
+      const siteId = await this.getSiteId();
+      if (!siteId) return null;
+
+      const headers = await this.getAuthHeaders();
+
+      // Try filtered search first (fast path)
+      let workbook: any = null;
+      const filterUrl = `${this.baseUrl}/api/3.19/sites/${siteId}/workbooks?pageSize=100&filter=name:eq:${encodeURIComponent(workbookName)}`;
+      const filterRes = await fetch(filterUrl, { headers });
+      if (filterRes.ok) {
+        const data = await filterRes.json() as any;
+        workbook = (data.workbooks?.workbook ?? [])[0] ?? null;
+      }
+
+      // Fallback: page through all workbooks
+      if (!workbook) {
+        for (let page = 1; page <= 10 && !workbook; page++) {
+          const res = await fetch(
+            `${this.baseUrl}/api/3.19/sites/${siteId}/workbooks?pageSize=100&pageNumber=${page}`,
+            { headers }
+          );
+          if (!res.ok) break;
+          const data = await res.json() as any;
+          const books: any[] = data.workbooks?.workbook ?? [];
+          workbook = books.find(w => w.name?.toLowerCase() === workbookName.toLowerCase()) ?? null;
+          if (books.length < 100) break;
+        }
+      }
+
+      if (!workbook) {
+        console.log(`[Tableau] findViewByName: workbook "${workbookName}" not found`);
+        return null;
+      }
+
+      const views = await this.getWorkbookViews(workbook.id);
+      const view = views.find((v: any) => {
+        const nameMatch = v.name?.toLowerCase() === viewName.toLowerCase();
+        const urlMatch = (v.contentUrl ?? '').split('/').pop()?.toLowerCase() === viewName.toLowerCase();
+        return nameMatch || urlMatch;
+      });
+
+      if (!view) {
+        console.log(`[Tableau] findViewByName: view "${viewName}" not found in workbook "${workbookName}"`);
+        return null;
+      }
+
+      const viewData = await this.queryViewData(view.id, {});
+      if (!viewData?.data || viewData.data.length === 0) {
+        return { viewId: view.id, workbookId: workbook.id, columns: [], rows: [] };
+      }
+
+      const columns = Object.keys(viewData.data[0]);
+      return { viewId: view.id, workbookId: workbook.id, columns, rows: viewData.data };
+    } catch (err) {
+      console.error('[Tableau] findViewByName error:', err);
+      return null;
+    }
+  }
 }
 
 export default new TableauAPIClient();

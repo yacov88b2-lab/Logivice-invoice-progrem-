@@ -78,6 +78,51 @@ export function forceArray<T>(value: T | T[] | undefined | null): T[] {
   return Array.isArray(value) ? value : [value];
 }
 
+// Parse a Tableau Online view URL. Rejects any domain that is not dub01.online.tableau.com
+// or any site that is not logivice.
+// Expected: https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName
+export function parseTableauViewUrl(url: string): { workbook: string; view: string } | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname !== 'dub01.online.tableau.com') return null;
+    const fragment = u.hash;
+    const m = fragment.match(/#\/site\/([^/]+)\/views\/([^/]+)\/([^/?#]+)/);
+    if (!m) return null;
+    if (m[1] !== 'logivice') return null;
+    return { workbook: decodeURIComponent(m[2]), view: decodeURIComponent(m[3]) };
+  } catch {
+    return null;
+  }
+}
+
+// Add (or replace) a sheet in an existing Excel file with Tableau row data.
+// Uses ExcelJS so the rest of the workbook's formatting is preserved.
+export async function appendTableauSheet(
+  workbookPath: string,
+  sheetName: string,
+  columns: string[],
+  rows: any[][],
+  includeHeaders: boolean
+): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(workbookPath);
+
+  const existing = wb.getWorksheet(sheetName);
+  if (existing) wb.removeWorksheet(existing.id);
+
+  const ws = wb.addWorksheet(sheetName);
+
+  if (includeHeaders && columns.length > 0) {
+    const headerRow = ws.addRow(columns);
+    headerRow.font = { bold: true };
+    headerRow.commit();
+  }
+  for (const row of rows) ws.addRow(row);
+
+  await wb.xlsx.writeFile(workbookPath);
+  console.log(`[appendTableauSheet] Wrote ${rows.length} rows to sheet "${sheetName}"`);
+}
+
 export function parseSharedStrings(sharedStringsObj: any): string[] {
   const sst = sharedStringsObj?.sst;
   const si  = forceArray(sst?.si);
