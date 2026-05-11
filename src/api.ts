@@ -236,24 +236,38 @@ export const api = {
   },
 
   // Tableau URL validation — structural check + best-effort view lookup
-  validateTableauUrl: async (url: string) => {
-    const res = await fetch(`${API_BASE}/rules/validate-tableau-url`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    return res.json() as Promise<{
-      valid: boolean;
-      urlParsed?: boolean;
-      viewFound?: boolean | null;
-      workbook?: string;
-      view?: string;
-      columns?: string[];
-      sampleRows?: string[][];
-      rowCount?: number;
-      error?: string;
-      warning?: string;
-    }>;
+  validateTableauUrl: async (url: string): Promise<{
+    valid: boolean;
+    urlParsed?: boolean;
+    viewFound?: boolean | null;
+    workbook?: string;
+    view?: string;
+    columns?: string[];
+    sampleRows?: string[][];
+    rowCount?: number;
+    error?: string;
+    warning?: string;
+  }> => {
+    const SERVER_ERROR = 'Could not validate Tableau URL. Check that the server is running and Tableau credentials are configured.';
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/rules/validate-tableau-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+    } catch {
+      throw new Error(SERVER_ERROR);
+    }
+    if (!res.ok) {
+      const msg = await getErrorMessage(res, SERVER_ERROR);
+      throw new Error(msg);
+    }
+    try {
+      return await res.json();
+    } catch {
+      throw new Error(SERVER_ERROR);
+    }
   },
 
   // Rule Assistant

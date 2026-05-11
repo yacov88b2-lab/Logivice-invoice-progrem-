@@ -118,3 +118,46 @@ describe('tableau_table_copy rule lifecycle (unit)', () => {
     expect(parsed).toBeNull(); // → would add error "url must be from dub01..."
   });
 });
+
+// ── Intent selection URL sync (unit) ──────────────────────────────────────────
+// Mirrors the onClick patch logic in IntentStep so we can test it without a
+// React component harness.
+
+function buildIntentPatch(
+  intentId: string,
+  state: { referenceUrl: string; tableauUrl: string }
+): Record<string, any> {
+  const patch: Record<string, any> = { intent: intentId };
+  if (intentId === 'tableau_copy' && state.referenceUrl && !state.tableauUrl) {
+    patch.tableauUrl = state.referenceUrl;
+    patch.tableauUrlValidated = null;
+  }
+  return patch;
+}
+
+describe('Intent selection → tableauUrl sync', () => {
+  const VALID_URL = 'https://dub01.online.tableau.com/#/site/logivice/views/WB/View';
+
+  it('prefills tableauUrl from referenceUrl when selecting tableau_copy with empty tableauUrl', () => {
+    const patch = buildIntentPatch('tableau_copy', { referenceUrl: VALID_URL, tableauUrl: '' });
+    expect(patch.tableauUrl).toBe(VALID_URL);
+    expect(patch.tableauUrlValidated).toBeNull();
+  });
+
+  it('does NOT overwrite a non-empty tableauUrl when selecting tableau_copy', () => {
+    const existing = 'https://dub01.online.tableau.com/#/site/logivice/views/Other/View';
+    const patch = buildIntentPatch('tableau_copy', { referenceUrl: VALID_URL, tableauUrl: existing });
+    expect(patch.tableauUrl).toBeUndefined();
+  });
+
+  it('does NOT set tableauUrl when referenceUrl is empty', () => {
+    const patch = buildIntentPatch('tableau_copy', { referenceUrl: '', tableauUrl: '' });
+    expect(patch.tableauUrl).toBeUndefined();
+  });
+
+  it('does NOT set tableauUrl for non-tableau_copy intents', () => {
+    const patch = buildIntentPatch('match', { referenceUrl: VALID_URL, tableauUrl: '' });
+    expect(patch.tableauUrl).toBeUndefined();
+    expect(patch.intent).toBe('match');
+  });
+});

@@ -130,6 +130,9 @@ function TableauCopyTestPanel({ rule, onMarkedTested }: RuleTestProps) {
   const step = rule.steps.find((s: any) => s.type === 'tableau_table_copy');
   const url: string = step?.config?.url ?? '';
   const targetSheet: string = step?.config?.targetSheet ?? 'Tableau Data';
+  const mode: 'raw_sheet' | 'target_range' = step?.config?.mode === 'target_range' ? 'target_range' : 'raw_sheet';
+  const startCell: string = step?.config?.startCell ?? '';
+  const includeHeaders: boolean = step?.config?.includeHeaders !== false;
 
   const runCheck = async () => {
     setLoading(true);
@@ -163,13 +166,44 @@ function TableauCopyTestPanel({ rule, onMarkedTested }: RuleTestProps) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tableau view URL</p>
-        <p className="mt-1 break-all font-mono text-sm text-[#28258b]">{url || '(none set)'}</p>
-        <p className="mt-2 text-xs text-slate-500">
-          Target sheet in output: <span className="font-semibold text-slate-700">{targetSheet}</span>
-        </p>
-        <p className="mt-1 text-xs text-slate-500">Mode: raw sheet (Phase 1)</p>
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tableau view URL</p>
+          <p className="mt-1 break-all font-mono text-sm text-[#28258b]">{url || '(none set)'}</p>
+        </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500">
+          <span>
+            Mode:{' '}
+            <span className="font-semibold text-slate-700">
+              {mode === 'target_range' ? 'Existing template sheet / start cell' : 'New sheet'}
+            </span>
+          </span>
+          <span>
+            {mode === 'target_range' ? 'Template sheet' : 'New sheet name'}:{' '}
+            <span className="font-semibold text-slate-700">{targetSheet}</span>
+          </span>
+          {mode === 'target_range' && (
+            <span>
+              Start cell: <span className="font-semibold font-mono text-slate-700">{startCell || '—'}</span>
+            </span>
+          )}
+          {mode === 'target_range' && (
+            <span>
+              Headers: <span className="font-semibold text-slate-700">{includeHeaders ? 'yes' : 'no'}</span>
+            </span>
+          )}
+        </div>
+        {mode === 'target_range' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+            <span className="font-semibold">Note:</span> When this rule runs, existing cells in "{targetSheet}" starting at {startCell || 'the configured cell'} will be overwritten.
+          </div>
+        )}
+        {tc?.viewFound && tc?.totalRows != null && mode === 'target_range' && (
+          <p className="text-xs text-slate-500">
+            Data to write: <span className="font-semibold text-slate-700">{tc.totalRows} rows × {tc.columns?.length ?? '?'} columns</span>
+            {includeHeaders ? ' (+ 1 header row)' : ''}
+          </p>
+        )}
       </div>
 
       <button

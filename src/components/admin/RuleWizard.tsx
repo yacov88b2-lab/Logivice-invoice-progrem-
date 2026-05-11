@@ -17,6 +17,9 @@ interface WizardState {
   tableauUrl: string;
   tableauViewName: string;
   tableauTargetSheet: string;
+  tableauMode: 'raw_sheet' | 'target_range';
+  tableauStartCell: string;
+  tableauIncludeHeaders: boolean;
   tableauUrlValidated: boolean | null;
   enabled: boolean;
   // Match
@@ -48,6 +51,9 @@ const DEFAULT_STATE: WizardState = {
   tableauUrl: '',
   tableauViewName: '',
   tableauTargetSheet: '',
+  tableauMode: 'raw_sheet',
+  tableauStartCell: '',
+  tableauIncludeHeaders: true,
   tableauUrlValidated: null,
   enabled: true,
   matchField: '',
@@ -273,16 +279,33 @@ function NameStep({
 
       <div>
         <label className="block text-sm font-semibold text-slate-700">
-          Reference link <span className="font-normal text-slate-400">(optional)</span>
+          {state.intent === 'tableau_copy' ? 'Tableau View URL' : 'Reference link'}{' '}
+          <span className="font-normal text-slate-400">(optional)</span>
         </label>
         <input
           type="url"
           value={state.referenceUrl}
-          onChange={e => update({ referenceUrl: e.target.value })}
-          placeholder="https://  — paste a link to a Tableau view, spreadsheet, or any reference"
+          onChange={e => {
+            const url = e.target.value;
+            const patch: Partial<WizardState> = { referenceUrl: url };
+            if (state.intent === 'tableau_copy') {
+              patch.tableauUrl = url;
+              patch.tableauUrlValidated = null;
+            }
+            update(patch);
+          }}
+          placeholder={
+            state.intent === 'tableau_copy'
+              ? 'https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName'
+              : 'https://  — paste a link to a Tableau view, spreadsheet, or any reference'
+          }
           className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
         />
-        <p className="mt-1 text-xs text-slate-400">This is saved for reference only — it won't affect how the rule runs.</p>
+        <p className="mt-1 text-xs text-slate-400">
+          {state.intent === 'tableau_copy'
+            ? 'For Tableau copy rules, this link will be used as the Tableau source URL.'
+            : "This is saved for reference only — it won't affect how the rule runs."}
+        </p>
       </div>
     </div>
   );
@@ -325,7 +348,7 @@ const INTENTS: { id: RuleIntent; icon: string; title: string; desc: string }[] =
     id: 'tableau_copy',
     icon: '📊',
     title: 'Copy table from Tableau',
-    desc: 'Fetch a Tableau view and add it as a raw sheet in the generated workbook',
+    desc: 'Fetch a Tableau view and write it into the generated workbook — as a new sheet or into a specific cell range',
   },
 ];
 
@@ -346,7 +369,14 @@ function IntentStep({
           <button
             key={intent.id}
             type="button"
-            onClick={() => update({ intent: intent.id })}
+            onClick={() => {
+              const patch: Partial<WizardState> = { intent: intent.id };
+              if (intent.id === 'tableau_copy' && state.referenceUrl && !state.tableauUrl) {
+                patch.tableauUrl = state.referenceUrl;
+                patch.tableauUrlValidated = null;
+              }
+              update(patch);
+            }}
             className={`rounded-xl border-2 p-4 text-left transition-all ${
               state.intent === intent.id
                 ? 'border-[#28258b] bg-[#28258b]/5 shadow-sm'
@@ -890,6 +920,8 @@ function OtherConfig({
 
 // ─── Tableau Copy Config ──────────────────────────────────────────────────────
 
+const START_CELL_RE = /^[A-Za-z]+[1-9][0-9]*$/;
+
 function TableauCopyConfig({
   state, update,
 }: {
@@ -915,16 +947,23 @@ function TableauCopyConfig({
       } else {
         update({ tableauUrlValidated: !result.valid ? false : null });
       }
-    } catch {
-      setValidationResult({ valid: false, error: 'Validation request failed' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Validation request failed';
+      setValidationResult({ valid: false, error: msg });
       update({ tableauUrlValidated: false });
     } finally {
       setValidating(false);
     }
   };
 
+  const startCellInvalid =
+    state.tableauMode === 'target_range' &&
+    state.tableauStartCell.trim().length > 0 &&
+    !START_CELL_RE.test(state.tableauStartCell.trim());
+
   return (
     <div className="space-y-5">
+      {/* URL */}
       <div>
         <label className="block text-sm font-semibold text-slate-700">Tableau View URL *</label>
         <p className="mt-0.5 text-xs text-slate-500">
@@ -937,7 +976,7 @@ function TableauCopyConfig({
             type="url"
             value={state.tableauUrl}
             onChange={e => {
-              update({ tableauUrl: e.target.value, tableauUrlValidated: null });
+              update({ tableauUrl: e.target.value, referenceUrl: e.target.value, tableauUrlValidated: null });
               setValidationResult(null);
             }}
             placeholder="https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName"
@@ -988,25 +1027,123 @@ function TableauCopyConfig({
         </div>
       )}
 
+      {/* Mode selector */}
       <div>
-        <label className="block text-sm font-semibold text-slate-700">Sheet name in output *</label>
-        <input
-          type="text"
-          value={state.tableauTargetSheet}
-          onChange={e => update({ tableauTargetSheet: e.target.value })}
-          placeholder={state.tableauViewName || 'Tableau Data'}
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
-        />
-        <p className="mt-1 text-xs text-slate-500">
-          A new sheet with this name is added to the generated Excel file.
-        </p>
+        <p className="text-sm font-semibold text-slate-700">Where should the data go?</p>
+        <div className="mt-2 space-y-2">
+          {[
+            {
+              value: 'raw_sheet' as const,
+              label: 'New sheet',
+              desc: 'Append a fresh sheet to the generated workbook with all Tableau rows',
+            },
+            {
+              value: 'target_range' as const,
+              label: 'Existing template sheet / start cell',
+              desc: 'Write the data into a specific sheet and cell in the uploaded template, preserving all formatting',
+            },
+          ].map(opt => (
+            <label
+              key={opt.value}
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                state.tableauMode === opt.value
+                  ? 'border-[#28258b] bg-[#28258b]/5'
+                  : 'border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <input
+                type="radio"
+                name="tableauMode"
+                checked={state.tableauMode === opt.value}
+                onChange={() => update({ tableauMode: opt.value })}
+                className="mt-0.5"
+              />
+              <div>
+                <p className="text-sm font-semibold text-slate-800">{opt.label}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{opt.desc}</p>
+              </div>
+            </label>
+          ))}
+        </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        <span className="font-semibold text-slate-700">Phase 1 — raw sheet mode.</span>{' '}
-        The Tableau view is copied as a new sheet (raw data, all rows). Writing into a specific cell
-        range is planned for a future phase.
-      </div>
+      {/* Raw sheet: sheet name */}
+      {state.tableauMode === 'raw_sheet' && (
+        <div>
+          <label className="block text-sm font-semibold text-slate-700">New sheet name *</label>
+          <input
+            type="text"
+            value={state.tableauTargetSheet}
+            onChange={e => update({ tableauTargetSheet: e.target.value })}
+            placeholder={state.tableauViewName || 'Tableau Data'}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            A new sheet with this name is added to the generated Excel file.
+          </p>
+        </div>
+      )}
+
+      {/* Target range: sheet name + start cell + headers + warning */}
+      {state.tableauMode === 'target_range' && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700">Existing template sheet name *</label>
+            <input
+              type="text"
+              value={state.tableauTargetSheet}
+              onChange={e => update({ tableauTargetSheet: e.target.value })}
+              placeholder="e.g., Total"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Must match the sheet name in the uploaded Excel template exactly.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700">Start cell *</label>
+            <input
+              type="text"
+              value={state.tableauStartCell}
+              onChange={e => update({ tableauStartCell: e.target.value.trim() })}
+              placeholder="e.g., A10"
+              className={`mt-1 w-40 rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 ${
+                startCellInvalid
+                  ? 'border-red-300 focus:border-red-400 focus:ring-red-200'
+                  : 'border-slate-300 focus:border-[#28258b] focus:ring-[#28258b]/20'
+              }`}
+            />
+            {startCellInvalid && (
+              <p className="mt-1 text-xs text-red-600">
+                Must be a valid cell reference like A10 or BC5 — letter(s) then row number (no zero row).
+              </p>
+            )}
+            {!startCellInvalid && (
+              <p className="mt-1 text-xs text-slate-500">
+                The top-left cell where the data will be written (e.g., A10).
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="tableauIncludeHeaders"
+              checked={state.tableauIncludeHeaders}
+              onChange={e => update({ tableauIncludeHeaders: e.target.checked })}
+              className="h-4 w-4 rounded border-slate-300 accent-[#28258b]"
+            />
+            <label htmlFor="tableauIncludeHeaders" className="text-sm text-slate-700">
+              Include column headers as the first written row
+            </label>
+          </div>
+
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <span className="font-semibold">Note:</span> Existing cell values in the target range will be overwritten. Formatting and cells outside the written range are preserved.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1175,6 +1312,9 @@ function describeRule(state: WizardState, customerId: string): string {
         : `For ${customerId}: custom rule — steps to be defined manually in the Rule Builder.`;
 
     case 'tableau_copy':
+      if (state.tableauMode === 'target_range') {
+        return `For ${customerId}: fetches Tableau view "${state.tableauViewName || state.tableauUrl}" and writes it into sheet "${state.tableauTargetSheet}" starting at cell ${state.tableauStartCell || 'A1'}${state.tableauIncludeHeaders ? ' (with headers)' : ' (no headers)'}.`;
+      }
       return `For ${customerId}: copies Tableau view "${state.tableauViewName || state.tableauUrl}" into the generated workbook as a new sheet named "${state.tableauTargetSheet || state.tableauViewName || 'Tableau Data'}".`;
 
     default:
@@ -1206,7 +1346,15 @@ function isConfigValid(state: WizardState): boolean {
     case 'transform': return state.transformField.trim().length > 0;
     case 'combine':   return state.combineField.trim().length > 0;
     case 'other':        return true;
-    case 'tableau_copy': return state.tableauUrl.trim().length > 0;
+    case 'tableau_copy': {
+      if (!state.tableauUrl.trim()) return false;
+      if (!state.tableauTargetSheet.trim()) return false;
+      if (state.tableauMode === 'target_range') {
+        const cell = state.tableauStartCell.trim();
+        return cell.length > 0 && START_CELL_RE.test(cell);
+      }
+      return true;
+    }
     default:             return false;
   }
 }
@@ -1289,9 +1437,10 @@ function wizardToRule(
         config: {
           url: state.tableauUrl,
           viewName: state.tableauViewName || state.tableauUrl,
-          mode: 'raw_sheet',
+          mode: state.tableauMode,
           targetSheet: state.tableauTargetSheet || state.tableauViewName || 'Tableau Data',
-          includeHeaders: true,
+          ...(state.tableauMode === 'target_range' ? { startCell: state.tableauStartCell.trim().toUpperCase() } : {}),
+          includeHeaders: state.tableauIncludeHeaders,
         },
       }];
       break;
@@ -1367,7 +1516,15 @@ function ruleToWizard(rule: CustomerRuleDefinition): WizardState {
     base.tableauUrl = s0.config.url ?? '';
     base.tableauViewName = s0.config.viewName ?? '';
     base.tableauTargetSheet = s0.config.targetSheet ?? '';
+    base.tableauMode = s0.config.mode === 'target_range' ? 'target_range' : 'raw_sheet';
+    base.tableauStartCell = s0.config.startCell ?? '';
+    base.tableauIncludeHeaders = s0.config.includeHeaders !== false;
     base.tableauUrlValidated = null;
+    // Keep Step 1 and Step 3 in sync — if no reference URL was stored in the description,
+    // use the Tableau URL from the step config so both fields show the same value.
+    if (!base.referenceUrl && base.tableauUrl) {
+      base.referenceUrl = base.tableauUrl;
+    }
   } else {
     base.intent = 'other';
   }

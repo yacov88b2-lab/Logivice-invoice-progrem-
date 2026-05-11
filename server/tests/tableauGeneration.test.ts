@@ -16,7 +16,11 @@ vi.mock('../services/tableauAPI', () => ({
 
 vi.mock('../rules/_base', async () => {
   const actual = await vi.importActual<typeof import('../rules/_base')>('../rules/_base');
-  return { ...actual, appendTableauSheet: vi.fn().mockResolvedValue(undefined) };
+  return {
+    ...actual,
+    appendTableauSheet: vi.fn().mockResolvedValue(undefined),
+    writeTableauRange: vi.fn().mockResolvedValue({ rowsWritten: 3, colsWritten: 3 }),
+  };
 });
 
 // ── Imports (after mocks are declared) ───────────────────────────────────────
@@ -24,7 +28,7 @@ vi.mock('../rules/_base', async () => {
 import { applyTableauCopyRules } from '../services/tableauCopyService';
 import { CustomerRuleModel } from '../models/CustomerRule';
 import { TableauAPIClient } from '../services/tableauAPI';
-import { appendTableauSheet } from '../rules/_base';
+import { appendTableauSheet, writeTableauRange } from '../rules/_base';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -292,6 +296,160 @@ describe('applyTableauCopyRules', () => {
     expect(results).toHaveLength(2);
     expect(results[0]).toMatchObject({ stepId: 'step_fail', status: 'failed' });
     expect(results[1]).toMatchObject({ stepId: 'step_ok',   status: 'copied', rowsCopied: 2 });
+  });
+
+  // ── target_range mode ─────────────────────────────────────────────────────
+
+  it('calls writeTableauRange (not appendTableauSheet) for target_range mode', async () => {
+    const rule = makeRule({
+      steps: [
+        {
+          id: 'step_tr_1',
+          type: 'tableau_table_copy',
+          enabled: true,
+          config: {
+            url: VALID_URL,
+            targetSheet: 'Total',
+            mode: 'target_range',
+            startCell: 'A10',
+            includeHeaders: true,
+          },
+        },
+      ],
+    });
+    vi.mocked(CustomerRuleModel.getAllActiveByCustomer).mockReturnValue([rule] as any);
+    mockFindViewByName.mockResolvedValueOnce(SAMPLE_VIEW_DATA);
+
+    const results = await applyTableauCopyRules('CUST_A', '/tmp/out.xlsx');
+
+    expect(writeTableauRange).toHaveBeenCalledOnce();
+    expect(appendTableauSheet).not.toHaveBeenCalled();
+    expect(results[0]).toMatchObject({
+      stepId: 'step_tr_1',
+      status: 'copied',
+      mode: 'target_range',
+      startCell: 'A10',
+      rowsCopied: 2,
+      columnsCopied: 3,
+    });
+  });
+
+  it('calls writeTableauRange with correct args for target_range', async () => {
+    const rule = makeRule({
+      steps: [
+        {
+          id: 'step_tr_args',
+          type: 'tableau_table_copy',
+          enabled: true,
+          config: {
+            url: VALID_URL,
+            targetSheet: 'Summary',
+            mode: 'target_range',
+            startCell: 'B5',
+            includeHeaders: false,
+          },
+        },
+      ],
+    });
+    vi.mocked(CustomerRuleModel.getAllActiveByCustomer).mockReturnValue([rule] as any);
+    mockFindViewByName.mockResolvedValueOnce(SAMPLE_VIEW_DATA);
+
+    await applyTableauCopyRules('CUST_A', '/tmp/workbook.xlsx');
+
+    expect(writeTableauRange).toHaveBeenCalledWith(
+      '/tmp/workbook.xlsx',
+      'Summary',
+      'B5',
+      ['Date', 'Qty', 'Item'],
+      [
+        ['2026-01-01', '10', 'Widget A'],
+        ['2026-01-02', '5',  'Widget B'],
+      ],
+      false
+    );
+  });
+
+  it('skips target_range step when startCell is invalid (before hitting Tableau API)', async () => {
+    const rule = makeRule({
+      steps: [
+        {
+          id: 'step_bad_cell',
+          type: 'tableau_table_copy',
+          enabled: true,
+          config: {
+            url: VALID_URL,
+            targetSheet: 'Total',
+            mode: 'target_range',
+            startCell: 'A0',
+            includeHeaders: true,
+          },
+        },
+      ],
+    });
+    vi.mocked(CustomerRuleModel.getAllActiveByCustomer).mockReturnValue([rule] as any);
+
+    const results = await applyTableauCopyRules('CUST_A', '/tmp/out.xlsx');
+
+    expect(results[0]).toMatchObject({ stepId: 'step_bad_cell', status: 'skipped' });
+    expect(results[0].error).toMatch(/startCell/i);
+    expect(mockFindViewByName).not.toHaveBeenCalled();
+    expect(writeTableauRange).not.toHaveBeenCalled();
+  });
+
+  it('reports failed status when writeTableauRange throws', async () => {
+    const rule = makeRule({
+      steps: [
+        {
+          id: 'step_tr_throw',
+          type: 'tableau_table_copy',
+          enabled: true,
+          config: {
+            url: VALID_URL,
+            targetSheet: 'Total',
+            mode: 'target_range',
+            startCell: 'A10',
+            includeHeaders: true,
+          },
+        },
+      ],
+    });
+    vi.mocked(CustomerRuleModel.getAllActiveByCustomer).mockReturnValue([rule] as any);
+    mockFindViewByName.mockResolvedValueOnce(SAMPLE_VIEW_DATA);
+    vi.mocked(writeTableauRange).mockRejectedValueOnce(new Error('Sheet "Total" not found in workbook'));
+
+    const results = await applyTableauCopyRules('CUST_A', '/tmp/out.xlsx');
+
+    expect(results[0]).toMatchObject({ stepId: 'step_tr_throw', status: 'failed' });
+    expect(results[0].error).toContain('Total');
+  });
+
+  it('result includes mode and startCell in copied entry', async () => {
+    const rule = makeRule({
+      steps: [
+        {
+          id: 'step_tr_meta',
+          type: 'tableau_table_copy',
+          enabled: true,
+          config: {
+            url: VALID_URL,
+            targetSheet: 'Total',
+            mode: 'target_range',
+            startCell: 'C3',
+            includeHeaders: true,
+          },
+        },
+      ],
+    });
+    vi.mocked(CustomerRuleModel.getAllActiveByCustomer).mockReturnValue([rule] as any);
+    mockFindViewByName.mockResolvedValueOnce(SAMPLE_VIEW_DATA);
+
+    const results = await applyTableauCopyRules('CUST_A', '/tmp/out.xlsx');
+
+    expect(results[0]).toMatchObject({
+      mode: 'target_range',
+      startCell: 'C3',
+      columnsCopied: 3,
+    });
   });
 
   it('skips disabled tableau_table_copy steps', async () => {

@@ -180,7 +180,10 @@ export interface TableauCopyResult {
   stepId: string;
   sheetName: string;
   status: 'copied' | 'skipped' | 'failed';
+  mode?: 'raw_sheet' | 'target_range';
+  startCell?: string;
   rowsCopied?: number;
+  columnsCopied?: number;
   error?: string;
 }
 

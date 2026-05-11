@@ -1245,8 +1245,13 @@ function TableauCopiedSheetsPanel({ results }: { results: TableauCopyResult[] })
 
           const icon = isCopied ? '✓' : isSkipped ? '⚠' : '✕';
 
+          const modeLabel = r.mode === 'target_range' ? 'Target range' : 'New sheet';
+          const sizeLabel = r.rowsCopied != null
+            ? `${r.rowsCopied} rows × ${r.columnsCopied ?? '?'} cols`
+            : null;
+
           const detail = isCopied
-            ? `${r.rowsCopied ?? 0} rows copied`
+            ? [sizeLabel, r.mode === 'target_range' && r.startCell ? `→ ${r.sheetName}!${r.startCell}` : null].filter(Boolean).join(' ')
             : isSkipped
             ? `Skipped — ${r.error ?? 'unknown reason'}`
             : `Failed — ${r.error ?? 'unknown error'}`;
@@ -1257,6 +1262,7 @@ function TableauCopiedSheetsPanel({ results }: { results: TableauCopyResult[] })
               <div className="min-w-0 flex-1">
                 <div className={`font-semibold ${labelCls}`}>{r.sheetName}</div>
                 <div className={`mt-0.5 text-xs ${detailCls}`}>{detail}</div>
+                <div className={`mt-0.5 text-xs ${detailCls} opacity-70`}>{modeLabel}</div>
               </div>
               <span className={`ml-auto mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${badgeCls}`}>
                 {r.status}

@@ -3,6 +3,7 @@ import { CustomerRuleModel } from '../../models/CustomerRule';
 import { RuleEngine, type CustomerRuleDefinition, type RuleEvaluationContext } from '../../services/RuleEngine';
 import { TableauAPIClient } from '../../services/tableauAPI';
 import { parseTableauViewUrl } from '../../rules/_base';
+import { validateAssistantSteps } from '../../services/stepValidator';
 import db from '../../db';
 
 const router = express.Router();
@@ -313,45 +314,6 @@ router.patch('/:id/revert-to-draft', (req, res) => {
   }
 });
 
-const VALID_STEP_TYPES = new Set([
-  'field_extraction', 'field_transform', 'match_transaction',
-  'fuzzy_match', 'filter', 'aggregate', 'conditional', 'tableau_table_copy'
-]);
-
-function validateAssistantSteps(steps: any[]): string[] {
-  const errors: string[] = [];
-  for (let i = 0; i < steps.length; i++) {
-    const s = steps[i];
-    const p = `Step ${i + 1}`;
-    if (!s.id || typeof s.id !== 'string') errors.push(`${p}: missing id`);
-    if (!s.type || !VALID_STEP_TYPES.has(s.type)) errors.push(`${p}: unknown type "${s.type}"`);
-    if (!s.config || typeof s.config !== 'object') { errors.push(`${p}: missing config`); continue; }
-    if (s.type === 'field_extraction') {
-      if (!s.config.fieldName) errors.push(`${p}: field_extraction requires fieldName`);
-      if (!s.config.outputKey) errors.push(`${p}: field_extraction requires outputKey`);
-    } else if (s.type === 'field_transform') {
-      if (!s.config.sourceKey) errors.push(`${p}: field_transform requires sourceKey`);
-      if (!s.config.targetKey) errors.push(`${p}: field_transform requires targetKey`);
-      if (!s.config.operation) errors.push(`${p}: field_transform requires operation`);
-    } else if (s.type === 'match_transaction' || s.type === 'fuzzy_match') {
-      if (!Array.isArray(s.config.matchFields) || s.config.matchFields.length === 0)
-        errors.push(`${p}: ${s.type} requires non-empty matchFields array`);
-    } else if (s.type === 'filter') {
-      if (!s.config.field) errors.push(`${p}: filter requires field`);
-      if (!s.config.operator) errors.push(`${p}: filter requires operator`);
-    } else if (s.type === 'aggregate') {
-      if (!s.config.sourceKey) errors.push(`${p}: aggregate requires sourceKey`);
-      if (!s.config.outputKey) errors.push(`${p}: aggregate requires outputKey`);
-      if (!s.config.operation) errors.push(`${p}: aggregate requires operation`);
-    } else if (s.type === 'tableau_table_copy') {
-      if (!s.config.url) errors.push(`${p}: tableau_table_copy requires url`);
-      if (!s.config.mode) errors.push(`${p}: tableau_table_copy requires mode`);
-      const parsed = s.config.url ? parseTableauViewUrl(s.config.url) : null;
-      if (s.config.url && !parsed) errors.push(`${p}: tableau_table_copy url must be from dub01.online.tableau.com/site/logivice`);
-    }
-  }
-  return errors;
-}
 
 // Validate a Tableau view URL: structural check + best-effort Tableau API verification.
 router.post('/validate-tableau-url', async (req, res) => {
@@ -428,6 +390,7 @@ async function handleTableauCopyTest(
   }
 
   const found = viewData !== null;
+  const stepMode: string = step.config?.mode || 'raw_sheet';
   const data = found && viewData ? {
     tableau_copy: {
       valid: true, viewFound: true,
@@ -436,7 +399,9 @@ async function handleTableauCopyTest(
       sampleRows: viewData.rows.slice(0, 5).map(row => viewData!.columns.map(c => String(row[c] ?? ''))),
       totalRows: viewData.rows.length,
       targetSheet: step.config.targetSheet || parsed.view,
-      mode: step.config.mode || 'raw_sheet'
+      mode: stepMode,
+      startCell: stepMode === 'target_range' ? (step.config.startCell || null) : undefined,
+      includeHeaders: step.config.includeHeaders !== false,
     }
   } : {
     tableau_copy: {

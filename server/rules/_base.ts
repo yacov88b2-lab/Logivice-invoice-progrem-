@@ -95,6 +95,65 @@ export function parseTableauViewUrl(url: string): { workbook: string; view: stri
   }
 }
 
+// Parse an Excel cell reference like "A10", "BC5" into { col, row } (both 1-indexed).
+// Returns null when the string is not a valid cell reference.
+export function parseStartCell(ref: string): { col: number; row: number } | null {
+  const m = String(ref ?? '').trim().match(/^([A-Za-z]+)(\d+)$/);
+  if (!m) return null;
+  const row = parseInt(m[2], 10);
+  if (!Number.isFinite(row) || row < 1) return null;
+  let col = 0;
+  for (const ch of m[1].toUpperCase()) col = col * 26 + (ch.charCodeAt(0) - 64);
+  return col > 0 ? { col, row } : null;
+}
+
+// Write Tableau data into an existing sheet starting at a specific cell.
+// Only overwrites cells in the output range — everything else is preserved.
+// Throws a descriptive error if the sheet is missing or startCell is invalid.
+export async function writeTableauRange(
+  workbookPath: string,
+  targetSheetName: string,
+  startCell: string,
+  columns: string[],
+  rows: any[][],
+  includeHeaders: boolean
+): Promise<{ rowsWritten: number; colsWritten: number }> {
+  const pos = parseStartCell(startCell);
+  if (!pos) {
+    throw new Error(`Invalid startCell: "${startCell}". Expected format like A1, B10, or AA5.`);
+  }
+
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(workbookPath);
+
+  const ws = wb.getWorksheet(targetSheetName);
+  if (!ws) {
+    const available = wb.worksheets.map((s: any) => `"${s.name}"`).join(', ');
+    throw new Error(`Sheet "${targetSheetName}" not found in workbook. Available: ${available || '(none)'}.`);
+  }
+
+  const colsWritten = Math.max(columns.length, rows[0]?.length ?? 0);
+  let currentRow = pos.row;
+
+  if (includeHeaders && columns.length > 0) {
+    const wsRow = ws.getRow(currentRow);
+    columns.forEach((col, i) => { wsRow.getCell(pos.col + i).value = col; });
+    wsRow.commit();
+    currentRow++;
+  }
+
+  for (const rowData of rows) {
+    const wsRow = ws.getRow(currentRow);
+    rowData.forEach((val: any, i: number) => { wsRow.getCell(pos.col + i).value = val ?? ''; });
+    wsRow.commit();
+    currentRow++;
+  }
+
+  await wb.xlsx.writeFile(workbookPath);
+  console.log(`[writeTableauRange] Wrote ${rows.length} rows to "${targetSheetName}"!${startCell}`);
+  return { rowsWritten: rows.length + (includeHeaders ? 1 : 0), colsWritten };
+}
+
 // Add (or replace) a sheet in an existing Excel file with Tableau row data.
 // Uses ExcelJS so the rest of the workbook's formatting is preserved.
 export async function appendTableauSheet(
