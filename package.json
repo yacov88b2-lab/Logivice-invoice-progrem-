@@ -19,16 +19,20 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.1",
+    "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.1.5",
     "autoprefixer": "^10.4.27",
     "postcss": "^8.5.8",
+    "supertest": "^7.2.2",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.9.3",
     "vite": "^6.2.4",
     "vitest": "^4.1.5"
   },
   "vitest": {
-    "include": ["server/tests/**/*.test.ts"],
+    "include": [
+      "server/tests/**/*.test.ts"
+    ],
     "environment": "node"
   },
   "dependencies": {

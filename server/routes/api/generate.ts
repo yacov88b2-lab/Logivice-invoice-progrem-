@@ -15,46 +15,6 @@ import { RuleEngine } from '../../services/RuleEngine';
 
 const router = express.Router();
 
-// Run the customer's active rule as primary matcher on all transactions DataMapper couldn't place.
-// Runs on ALL unmatched items — including review-queue candidates. Items the rule matches are
-// pulled out of the review queue entirely; items the rule can't match remain for human review.
-async function applyRuleOverrides(
-  customerName: string,
-  unmatchedItems: any[],
-  templateStructure: any
-): Promise<any[]> {
-  const activeRule = CustomerRuleModel.getActiveMatchingByCustomer(customerName);
-  if (!activeRule || unmatchedItems.length === 0) return [];
-
-  const lineItems = getInvoiceLineItems(templateStructure);
-  const additionalMatches: any[] = [];
-
-  for (const u of unmatchedItems) {
-    try {
-      const result = await RuleEngine.evaluateRule(activeRule, {
-        transaction: u.transaction,
-        lineItems,
-        templateStructure,
-        previousResults: {}
-      });
-      if (result.success && result.data.matchedLineItem) {
-        const matched = result.data.matchedLineItem;
-        additionalMatches.push({
-          lineItem: matched,
-          transaction: u.transaction,
-          sheetName: matched.sheetName || '',
-          confidence: result.data.matches?.[0]?.confidence ?? 0.9,
-          matchReason: `Rule match: ${activeRule.name} v${activeRule.version}`
-        });
-      }
-    } catch {
-      // Rule evaluation failures must never break invoice generation
-    }
-  }
-
-  return additionalMatches;
-}
-
 
 function getInvoiceLineItems(templateStructure: any) {
   const lineItems: any[] = [];
@@ -362,51 +322,115 @@ router.post('/invoice', async (req, res) => {
       });
     }
 
-    // Map transactions to line items
-    const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(
-      transactions,
-      pricelist.template_structure,
-      pricelistBuffer
-    );
-
-    // Apply manual resolutions carried forward from the preceding preview session
+    // PRIMARY matching: rule engine if active approved rule exists, DataMapper otherwise
+    const primaryRule = CustomerRuleModel.getActiveMatchingByCustomer(pricelist.customer_name);
     const resolutionMap: Record<string, number> =
       resolvedItems && typeof resolvedItems === 'object' ? resolvedItems : {};
-    const resolvedExtraMatches: any[] = [];
-    const afterResolutionUnmatched: any[] = [];
-    for (const u of dmUnmatched) {
-      const selectedIdx = resolutionMap[(u as any).transaction?.id];
-      if ((u as any).needsReview && (u as any).alternatives?.length && selectedIdx !== undefined) {
-        const alt = (u as any).alternatives[selectedIdx];
-        if (alt) {
-          resolvedExtraMatches.push({
-            lineItem: alt.lineItem,
-            transaction: (u as any).transaction,
-            sheetName: alt.sheetName,
-            confidence: alt.score,
-            matchReason: `Manually resolved (score: ${(alt.score * 100).toFixed(0)}%)`
+
+    let matches: any[];
+    let unmatched: any[];
+
+    if (primaryRule) {
+      // Rule engine PRIMARY — evaluate every transaction
+      const lineItems = getInvoiceLineItems(pricelist.template_structure);
+      const ruleMatches: any[] = [];
+      const ruleUnmatched: any[] = [];
+      for (const transaction of transactions) {
+        try {
+          const result = await RuleEngine.evaluateRule(primaryRule, {
+            transaction, lineItems, templateStructure: pricelist.template_structure, previousResults: {}
           });
-          continue;
+          if (result.success && result.data.matchedLineItem) {
+            const matched = result.data.matchedLineItem;
+            ruleMatches.push({
+              lineItem: matched, transaction,
+              sheetName: matched.sheetName || '',
+              confidence: result.data.matches?.[0]?.confidence ?? 0.9,
+              matchReason: `Rule match: ${primaryRule.name} v${primaryRule.version}`
+            });
+          } else {
+            ruleUnmatched.push(transaction);
+          }
+        } catch {
+          ruleUnmatched.push(transaction);
         }
       }
-      afterResolutionUnmatched.push(u);
-    }
 
-    // Block generation if reviewer left items unresolved — those transactions would be silently dropped from billing
-    const unresolvedReviewCount = afterResolutionUnmatched.filter((u: any) => u.needsReview).length;
-    if (unresolvedReviewCount > 0 && !force_review) {
-      return res.status(422).json({
-        error: 'unresolved_review_items',
-        count: unresolvedReviewCount,
-        message: `${unresolvedReviewCount} transaction${unresolvedReviewCount !== 1 ? 's' : ''} in the review queue have not been resolved. Resolve them first, or pass force_review=true to skip and drop them from this invoice.`
-      });
-    }
+      // DataMapper FALLBACK on transactions the rule could not match
+      const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(
+        ruleUnmatched, pricelist.template_structure, pricelistBuffer
+      );
 
-    // Rule engine fallback: rescue truly-unmatched items the DataMapper couldn't place
-    const ruleMatches = await applyRuleOverrides(pricelist.customer_name, afterResolutionUnmatched, pricelist.template_structure);
-    const ruleMatchedIds = new Set(ruleMatches.map((m: any) => m.transaction.id));
-    const matches = [...dmMatches, ...resolvedExtraMatches, ...ruleMatches];
-    const unmatched = afterResolutionUnmatched.filter((u: any) => !ruleMatchedIds.has(u.transaction.id));
+      // Manual resolutions on DataMapper fallback unmatched
+      const resolvedExtraMatches: any[] = [];
+      const afterResolutionUnmatched: any[] = [];
+      for (const u of dmUnmatched) {
+        const selectedIdx = resolutionMap[(u as any).transaction?.id];
+        if ((u as any).needsReview && (u as any).alternatives?.length && selectedIdx !== undefined) {
+          const alt = (u as any).alternatives[selectedIdx];
+          if (alt) {
+            resolvedExtraMatches.push({
+              lineItem: alt.lineItem,
+              transaction: (u as any).transaction,
+              sheetName: alt.sheetName,
+              confidence: alt.score,
+              matchReason: `Manually resolved (score: ${(alt.score * 100).toFixed(0)}%)`
+            });
+            continue;
+          }
+        }
+        afterResolutionUnmatched.push(u);
+      }
+
+      const unresolvedReviewCount = afterResolutionUnmatched.filter((u: any) => u.needsReview).length;
+      if (unresolvedReviewCount > 0 && !force_review) {
+        return res.status(422).json({
+          error: 'unresolved_review_items',
+          count: unresolvedReviewCount,
+          message: `${unresolvedReviewCount} transaction${unresolvedReviewCount !== 1 ? 's' : ''} in the review queue have not been resolved. Resolve them first, or pass force_review=true to skip and drop them from this invoice.`
+        });
+      }
+
+      matches = [...ruleMatches, ...dmMatches, ...resolvedExtraMatches];
+      unmatched = afterResolutionUnmatched;
+    } else {
+      // DataMapper PRIMARY — no active approved rule, legacy path
+      const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(
+        transactions, pricelist.template_structure, pricelistBuffer
+      );
+
+      const resolvedExtraMatches: any[] = [];
+      const afterResolutionUnmatched: any[] = [];
+      for (const u of dmUnmatched) {
+        const selectedIdx = resolutionMap[(u as any).transaction?.id];
+        if ((u as any).needsReview && (u as any).alternatives?.length && selectedIdx !== undefined) {
+          const alt = (u as any).alternatives[selectedIdx];
+          if (alt) {
+            resolvedExtraMatches.push({
+              lineItem: alt.lineItem,
+              transaction: (u as any).transaction,
+              sheetName: alt.sheetName,
+              confidence: alt.score,
+              matchReason: `Manually resolved (score: ${(alt.score * 100).toFixed(0)}%)`
+            });
+            continue;
+          }
+        }
+        afterResolutionUnmatched.push(u);
+      }
+
+      const unresolvedReviewCount = afterResolutionUnmatched.filter((u: any) => u.needsReview).length;
+      if (unresolvedReviewCount > 0 && !force_review) {
+        return res.status(422).json({
+          error: 'unresolved_review_items',
+          count: unresolvedReviewCount,
+          message: `${unresolvedReviewCount} transaction${unresolvedReviewCount !== 1 ? 's' : ''} in the review queue have not been resolved. Resolve them first, or pass force_review=true to skip and drop them from this invoice.`
+        });
+      }
+
+      matches = [...dmMatches, ...resolvedExtraMatches];
+      unmatched = afterResolutionUnmatched;
+    }
 
     const reviewRequired = unmatched.filter((u: any) => u.needsReview).length;
     const ruleDiagnostics = await buildRuleDiagnostics(
@@ -613,45 +637,97 @@ router.post('/preview', async (req, res) => {
       });
     }
 
-    // Map transactions (dry run)
-    const { matches: rawMatches, unmatched: rawUnmatched } = DataMapper.mapTransactions(
-      transactions,
-      pricelist.template_structure,
-      pricelistBuffer
-    );
-
-    // Apply manual resolutions: move reviewer-selected alternatives into confirmed matches
+    // PRIMARY matching: rule engine if active approved rule exists, DataMapper otherwise
+    const primaryRule = CustomerRuleModel.getActiveMatchingByCustomer(pricelist.customer_name);
     const resolutionMap: Record<string, number> =
       resolvedItems && typeof resolvedItems === 'object' ? resolvedItems : {};
-    const resolvedMatches: any[] = [];
-    const stillUnmatched: any[] = [];
-    for (const u of rawUnmatched) {
-      const selectedIdx = resolutionMap[(u as any).transaction?.id];
-      if ((u as any).needsReview && (u as any).alternatives?.length && selectedIdx !== undefined) {
-        const alt = (u as any).alternatives[selectedIdx];
-        if (alt) {
-          resolvedMatches.push({
-            lineItem: alt.lineItem,
-            transaction: (u as any).transaction,
-            sheetName: alt.sheetName,
-            confidence: alt.score,
-            matchReason: `Manually resolved (score: ${(alt.score * 100).toFixed(0)}%)`
+
+    let matches: any[];
+    let unmatched: any[];
+
+    if (primaryRule) {
+      // Rule engine PRIMARY — evaluate every transaction
+      const lineItems = getInvoiceLineItems(pricelist.template_structure);
+      const ruleMatches: any[] = [];
+      const ruleUnmatched: any[] = [];
+      for (const transaction of transactions) {
+        try {
+          const result = await RuleEngine.evaluateRule(primaryRule, {
+            transaction, lineItems, templateStructure: pricelist.template_structure, previousResults: {}
           });
-          continue;
+          if (result.success && result.data.matchedLineItem) {
+            const matched = result.data.matchedLineItem;
+            ruleMatches.push({
+              lineItem: matched, transaction,
+              sheetName: matched.sheetName || '',
+              confidence: result.data.matches?.[0]?.confidence ?? 0.9,
+              matchReason: `Rule match: ${primaryRule.name} v${primaryRule.version}`
+            });
+          } else {
+            ruleUnmatched.push(transaction);
+          }
+        } catch {
+          ruleUnmatched.push(transaction);
         }
       }
-      stillUnmatched.push(u);
+
+      // DataMapper FALLBACK on transactions the rule could not match
+      const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(
+        ruleUnmatched, pricelist.template_structure, pricelistBuffer
+      );
+
+      // Manual resolutions on DataMapper fallback unmatched
+      const resolvedMatches: any[] = [];
+      const stillUnmatched: any[] = [];
+      for (const u of dmUnmatched) {
+        const selectedIdx = resolutionMap[(u as any).transaction?.id];
+        if ((u as any).needsReview && (u as any).alternatives?.length && selectedIdx !== undefined) {
+          const alt = (u as any).alternatives[selectedIdx];
+          if (alt) {
+            resolvedMatches.push({
+              lineItem: alt.lineItem,
+              transaction: (u as any).transaction,
+              sheetName: alt.sheetName,
+              confidence: alt.score,
+              matchReason: `Manually resolved (score: ${(alt.score * 100).toFixed(0)}%)`
+            });
+            continue;
+          }
+        }
+        stillUnmatched.push(u);
+      }
+
+      matches = [...ruleMatches, ...dmMatches, ...resolvedMatches];
+      unmatched = stillUnmatched;
+    } else {
+      // DataMapper PRIMARY — no active approved rule, legacy path
+      const { matches: rawMatches, unmatched: rawUnmatched } = DataMapper.mapTransactions(
+        transactions, pricelist.template_structure, pricelistBuffer
+      );
+
+      const resolvedMatches: any[] = [];
+      const stillUnmatched: any[] = [];
+      for (const u of rawUnmatched) {
+        const selectedIdx = resolutionMap[(u as any).transaction?.id];
+        if ((u as any).needsReview && (u as any).alternatives?.length && selectedIdx !== undefined) {
+          const alt = (u as any).alternatives[selectedIdx];
+          if (alt) {
+            resolvedMatches.push({
+              lineItem: alt.lineItem,
+              transaction: (u as any).transaction,
+              sheetName: alt.sheetName,
+              confidence: alt.score,
+              matchReason: `Manually resolved (score: ${(alt.score * 100).toFixed(0)}%)`
+            });
+            continue;
+          }
+        }
+        stillUnmatched.push(u);
+      }
+
+      matches = [...rawMatches, ...resolvedMatches];
+      unmatched = stillUnmatched;
     }
-    // Rule engine: run on ALL unmatched items. Items the rule matches are pulled out of the
-    // review queue automatically; items it can't match remain for human selection.
-    const ruleMatches = await applyRuleOverrides(
-      pricelist.customer_name,
-      stillUnmatched,
-      pricelist.template_structure
-    );
-    const ruleMatchedIds = new Set(ruleMatches.map((m: any) => m.transaction.id));
-    const matches = [...rawMatches, ...resolvedMatches, ...ruleMatches];
-    const unmatched = stillUnmatched.filter((u: any) => !ruleMatchedIds.has(u.transaction.id));
 
     const ruleDiagnostics = await buildRuleDiagnostics(
       pricelist.customer_name,
