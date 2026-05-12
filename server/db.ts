@@ -16,6 +16,105 @@ const db: DatabaseType = new Database(DB_PATH);
 // Enable WAL mode for better performance
 db.pragma('journal_mode = WAL');
 
+function tableExists(tableName: string): boolean {
+  return Boolean(
+    db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(tableName)
+  );
+}
+
+function foreignKeyTargetsTable(tableName: string, targetTable: string): boolean {
+  if (!tableExists(tableName)) return false;
+  const foreignKeys = db.prepare(`PRAGMA foreign_key_list(${tableName})`).all() as { table: string }[];
+  return foreignKeys.some(fk => fk.table === targetTable);
+}
+
+function rebuildRuleTestRunsTable(): void {
+  const hasTable = tableExists('rule_test_runs');
+  const columns = hasTable
+    ? (db.prepare('PRAGMA table_info(rule_test_runs)').all() as { name: string }[]).map(c => c.name)
+    : [];
+
+  db.exec('DROP TABLE IF EXISTS rule_test_runs_rebuilt');
+  db.exec(`
+    CREATE TABLE rule_test_runs_rebuilt (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      rule_id TEXT NOT NULL,
+      test_data TEXT NOT NULL,
+      result TEXT,
+      result_data TEXT,
+      status TEXT CHECK(status IN ('passed', 'failed', 'error')),
+      passed INTEGER DEFAULT 0,
+      created_by TEXT DEFAULT 'system',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (rule_id) REFERENCES customer_rules(id) ON DELETE CASCADE
+    )
+  `);
+
+  if (hasTable && columns.length > 0) {
+    const wanted = ['id', 'rule_id', 'test_data', 'result', 'result_data', 'status', 'passed', 'created_by', 'created_at'];
+    const common = wanted.filter(c => columns.includes(c));
+    if (common.length > 0) {
+      db.exec(`INSERT INTO rule_test_runs_rebuilt (${common.join(',')}) SELECT ${common.join(',')} FROM rule_test_runs`);
+    }
+  }
+
+  db.exec('DROP TABLE IF EXISTS rule_test_runs');
+  db.exec('ALTER TABLE rule_test_runs_rebuilt RENAME TO rule_test_runs');
+}
+
+function rebuildRuleAuditLogTable(): void {
+  const hasTable = tableExists('rule_audit_log');
+  const columns = hasTable
+    ? (db.prepare('PRAGMA table_info(rule_audit_log)').all() as { name: string }[]).map(c => c.name)
+    : [];
+
+  db.exec('DROP TABLE IF EXISTS rule_audit_log_rebuilt');
+  db.exec(`
+    CREATE TABLE rule_audit_log_rebuilt (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id TEXT NOT NULL,
+      action TEXT CHECK(action IN ('created', 'updated', 'enabled', 'disabled', 'deleted')) NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      changed_by TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (rule_id) REFERENCES customer_rules(id) ON DELETE CASCADE
+    )
+  `);
+
+  if (hasTable && columns.length > 0) {
+    const wanted = ['id', 'rule_id', 'action', 'old_value', 'new_value', 'changed_by', 'created_at'];
+    const common = wanted.filter(c => columns.includes(c));
+    if (common.length > 0) {
+      db.exec(`INSERT INTO rule_audit_log_rebuilt (${common.join(',')}) SELECT ${common.join(',')} FROM rule_audit_log`);
+    }
+  }
+
+  db.exec('DROP TABLE IF EXISTS rule_audit_log');
+  db.exec('ALTER TABLE rule_audit_log_rebuilt RENAME TO rule_audit_log');
+}
+
+function repairRuleForeignKeys(): void {
+  const needsRuleTestRepair = foreignKeyTargetsTable('rule_test_runs', 'customer_rules_old');
+  const needsRuleAuditRepair = foreignKeyTargetsTable('rule_audit_log', 'customer_rules_old');
+
+  if (!needsRuleTestRepair && !needsRuleAuditRepair) return;
+
+  const repair = db.transaction(() => {
+    db.pragma('foreign_keys = OFF');
+    if (needsRuleTestRepair) {
+      rebuildRuleTestRunsTable();
+    }
+    if (needsRuleAuditRepair) {
+      rebuildRuleAuditLogTable();
+    }
+    db.pragma('foreign_keys = ON');
+  });
+
+  repair();
+  console.log('[DB] Repaired rule child tables that referenced customer_rules_old');
+}
+
 // Initialize tables
 export function initDatabase() {
   // Pricelists table
@@ -191,6 +290,12 @@ export function initDatabase() {
     }
   } catch (e) {
     console.error('[DB] Migration approval_status failed:', e);
+  }
+
+  try {
+    repairRuleForeignKeys();
+  } catch (e) {
+    console.error('[DB] Rule foreign-key repair failed:', e);
   }
 
   // Rule test runs (for preview/validation)
