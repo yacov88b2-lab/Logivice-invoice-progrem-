@@ -100,19 +100,84 @@ function repairRuleForeignKeys(): void {
 
   if (!needsRuleTestRepair && !needsRuleAuditRepair) return;
 
-  const repair = db.transaction(() => {
-    db.pragma('foreign_keys = OFF');
-    if (needsRuleTestRepair) {
-      rebuildRuleTestRunsTable();
-    }
-    if (needsRuleAuditRepair) {
-      rebuildRuleAuditLogTable();
-    }
-    db.pragma('foreign_keys = ON');
-  });
+  const previousForeignKeys = db.pragma('foreign_keys', { simple: true }) as number;
+  db.pragma('foreign_keys = OFF');
 
-  repair();
+  try {
+    const repair = db.transaction(() => {
+      if (needsRuleTestRepair) {
+        rebuildRuleTestRunsTable();
+      }
+      if (needsRuleAuditRepair) {
+        rebuildRuleAuditLogTable();
+      }
+    });
+
+    repair();
+  } finally {
+    db.pragma(`foreign_keys = ${previousForeignKeys ? 'ON' : 'OFF'}`);
+  }
+
   console.log('[DB] Repaired rule child tables that referenced customer_rules_old');
+}
+
+function ensureRuleForeignKeysCurrent(): void {
+  const brokenTables = ['rule_test_runs', 'rule_audit_log']
+    .filter(tableName => foreignKeyTargetsTable(tableName, 'customer_rules_old'));
+
+  if (brokenTables.length > 0) {
+    throw new Error(`Rule child table foreign keys still reference customer_rules_old: ${brokenTables.join(', ')}`);
+  }
+}
+
+function createRuleChildTables(): void {
+  // Rule test runs (for preview/validation)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rule_test_runs (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      rule_id TEXT NOT NULL,
+      test_data TEXT NOT NULL,
+      result TEXT,
+      result_data TEXT,
+      status TEXT CHECK(status IN ('passed', 'failed', 'error')),
+      passed INTEGER DEFAULT 0,
+      created_by TEXT DEFAULT 'system',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (rule_id) REFERENCES customer_rules(id) ON DELETE CASCADE
+    )
+  `);
+
+  const ruleTestColumns = db.prepare('PRAGMA table_info(rule_test_runs)').all() as { name: string }[];
+  const hasRuleTestColumn = (name: string) => ruleTestColumns.some(column => column.name === name);
+  if (!hasRuleTestColumn('result_data')) {
+    db.exec('ALTER TABLE rule_test_runs ADD COLUMN result_data TEXT');
+  }
+  if (!hasRuleTestColumn('status')) {
+    db.exec("ALTER TABLE rule_test_runs ADD COLUMN status TEXT CHECK(status IN ('passed', 'failed', 'error'))");
+  }
+  if (!hasRuleTestColumn('created_by')) {
+    db.exec("ALTER TABLE rule_test_runs ADD COLUMN created_by TEXT DEFAULT 'system'");
+  }
+
+  // Rule audit trail
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rule_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id TEXT NOT NULL,
+      action TEXT CHECK(action IN ('created', 'updated', 'enabled', 'disabled', 'deleted')) NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      changed_by TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (rule_id) REFERENCES customer_rules(id) ON DELETE CASCADE
+    )
+  `);
+}
+
+function migrateRuleChildTables(): void {
+  createRuleChildTables();
+  repairRuleForeignKeys();
+  ensureRuleForeignKeysCurrent();
 }
 
 // Initialize tables
@@ -293,52 +358,11 @@ export function initDatabase() {
   }
 
   try {
-    repairRuleForeignKeys();
+    migrateRuleChildTables();
   } catch (e) {
-    console.error('[DB] Rule foreign-key repair failed:', e);
+    console.error('[DB] Rule child-table migration failed:', e);
+    throw e;
   }
-
-  // Rule test runs (for preview/validation)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS rule_test_runs (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      rule_id TEXT NOT NULL,
-      test_data TEXT NOT NULL,
-      result TEXT,
-      result_data TEXT,
-      status TEXT CHECK(status IN ('passed', 'failed', 'error')),
-      passed INTEGER DEFAULT 0,
-      created_by TEXT DEFAULT 'system',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (rule_id) REFERENCES customer_rules(id) ON DELETE CASCADE
-    )
-  `);
-
-  const ruleTestColumns = db.prepare('PRAGMA table_info(rule_test_runs)').all() as { name: string }[];
-  const hasRuleTestColumn = (name: string) => ruleTestColumns.some(column => column.name === name);
-  if (!hasRuleTestColumn('result_data')) {
-    db.exec('ALTER TABLE rule_test_runs ADD COLUMN result_data TEXT');
-  }
-  if (!hasRuleTestColumn('status')) {
-    db.exec("ALTER TABLE rule_test_runs ADD COLUMN status TEXT CHECK(status IN ('passed', 'failed', 'error'))");
-  }
-  if (!hasRuleTestColumn('created_by')) {
-    db.exec("ALTER TABLE rule_test_runs ADD COLUMN created_by TEXT DEFAULT 'system'");
-  }
-
-  // Rule audit trail
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS rule_audit_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      rule_id TEXT NOT NULL,
-      action TEXT CHECK(action IN ('created', 'updated', 'enabled', 'disabled', 'deleted')) NOT NULL,
-      old_value TEXT,
-      new_value TEXT,
-      changed_by TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (rule_id) REFERENCES customer_rules(id) ON DELETE CASCADE
-    )
-  `);
 
   // Bug reports table
   db.exec(`
