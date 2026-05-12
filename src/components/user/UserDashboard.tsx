@@ -301,7 +301,7 @@ export function UserDashboard() {
         const safeCustomer = String(selectedCustomer || preview?.pricelist?.name || 'Customer').trim();
         const downloadName = `${safeCustomer} Total transaction matched and unmatched ${timestamp}.xlsx`;
 
-        const res = await api.exportTotal(Number(selectedPricelist), startDate, endDate);
+        const res = await api.exportTotal(Number(selectedPricelist), startDate, endDate, resolvedItems);
         await downloadFromResponse(res, downloadName);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));

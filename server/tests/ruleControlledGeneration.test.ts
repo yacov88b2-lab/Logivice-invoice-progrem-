@@ -268,6 +268,33 @@ describe('Manual resolutions applied to DataMapper fallback unmatched', () => {
     expect(res.body.matches[0].reason).toMatch(/Manually resolved/);
   });
 
+  it('export-total: resolvedItems selection is applied before export rows are built', async () => {
+    const tx1 = makeTx('tx1');
+    const li = makeLineItem();
+
+    vi.mocked(ExcelDataExtractor.extractFromAnalyzeSheet).mockReturnValue([tx1] as any);
+    vi.mocked(RuleEngine.evaluateRule).mockResolvedValue(makeRuleResult(false) as any);
+    vi.mocked(DataMapper.mapTransactions).mockReturnValue({
+      matches: [],
+      unmatched: [{
+        transaction: { ...tx1, customer: 'ACME', warehouse: 'WH1' },
+        reason: 'low confidence',
+        needsReview: true,
+        reviewReason: 'ambiguous',
+        alternatives: [{ lineItem: li, sheetName: 'Sheet1', score: 0.75 }],
+      }],
+    } as any);
+
+    const res = await request(buildApp())
+      .post('/api/generate/export-total')
+      .send({ ...BASE, resolvedItems: { tx1: 0 } });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml.sheet');
+    expect(RuleEngine.evaluateRule).toHaveBeenCalled();
+    expect(DataMapper.mapTransactions).toHaveBeenCalled();
+  });
+
   it('invoice: unresolved needsReview items block generation without force_review', async () => {
     const tx1 = makeTx('tx1');
 

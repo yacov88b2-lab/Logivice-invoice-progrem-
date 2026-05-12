@@ -125,11 +125,13 @@ export const api = {
     return data;
   },
 
-  exportTotal: async (pricelistId: number, startDate: string, endDate: string) => {
+  exportTotal: async (pricelistId: number, startDate: string, endDate: string, resolvedItems?: Record<string, number>) => {
+    const body: Record<string, unknown> = { pricelist_id: pricelistId, start_date: startDate, end_date: endDate };
+    if (resolvedItems && Object.keys(resolvedItems).length > 0) body.resolvedItems = resolvedItems;
     const res = await fetch(`${API_BASE}/generate/export-total`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pricelist_id: pricelistId, start_date: startDate, end_date: endDate }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to export total. Please try again.'));
     return res;

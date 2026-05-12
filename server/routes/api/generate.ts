@@ -97,17 +97,149 @@ async function buildRuleDiagnostics(
   };
 }
 
-// Export matched/unmatched + raw Tableau sheets as a single Excel file
-// TODO(export-alignment): This endpoint uses raw DataMapper output only. It does NOT apply
-// resolvedItems (manual review-queue selections) or applyRuleOverrides (rule-engine fallback).
-// As a result, the exported match/unmatched counts may differ from what preview/invoice produce.
-// Intentionally left as-is for QA release — it serves as a raw diagnostic view.
-// To align: accept resolvedItems + call applyRuleOverrides, matching the /invoice pipeline.
-// Risk: export-total is used mid-session before resolutions are finalised; aligning too early
-// could show a misleadingly optimistic match count. Re-evaluate after the first full billing cycle.
+async function loadBillingTransactions(
+  pricelist: any,
+  pricelistBuffer: Buffer,
+  startDate: string,
+  endDate: string,
+  useExcelData = true
+): Promise<{ transactions: any[]; rawViewData: Map<string, any[]>; filteredViewData: Map<string, any[]> }> {
+  const isAfimilkBilling = String(pricelist.customer_name || '').toLowerCase().includes('afimilk');
+  let transactions: any[] = [];
+  let rawViewData = new Map<string, any[]>();
+  let filteredViewData = new Map<string, any[]>();
+
+  if (useExcelData && !isAfimilkBilling) {
+    transactions = ExcelDataExtractor.extractFromAnalyzeSheet(pricelistBuffer);
+
+    if (transactions.length > 0) {
+      return {
+        transactions: transactions.map(t => ({
+          ...t,
+          customer: pricelist.customer_name,
+          warehouse: pricelist.warehouse_code
+        })),
+        rawViewData,
+        filteredViewData
+      };
+    }
+
+    console.log('No data in Excel Analyze sheet, falling back to Tableau API');
+  }
+
+  const tableauClient = new TableauAPIClient();
+  const result = await tableauClient.fetchTransactionsWithRawData(
+    startDate,
+    endDate,
+    pricelist.customer_name,
+    pricelist.warehouse_code
+  );
+
+  rawViewData = result.rawViewData;
+  filteredViewData = result.filteredViewData;
+  transactions = result.transactions;
+
+  return { transactions, rawViewData, filteredViewData };
+}
+
+async function matchTransactionsForBilling(
+  pricelist: any,
+  pricelistBuffer: Buffer,
+  transactions: any[],
+  resolvedItems?: Record<string, number>
+): Promise<{ matches: any[]; unmatched: any[]; activeRule: any | null }> {
+  const primaryRule = CustomerRuleModel.getActiveMatchingByCustomer(pricelist.customer_name);
+  const resolutionMap: Record<string, number> =
+    resolvedItems && typeof resolvedItems === 'object' ? resolvedItems : {};
+
+  const applyManualResolutions = (items: any[]) => {
+    const resolvedMatches: any[] = [];
+    const stillUnmatched: any[] = [];
+
+    for (const u of items) {
+      const selectedIdx = u?.transaction?.id ? resolutionMap[u.transaction.id] : undefined;
+      if (u?.needsReview && u?.alternatives?.length && selectedIdx !== undefined) {
+        const alt = u.alternatives[selectedIdx];
+        if (alt) {
+          resolvedMatches.push({
+            lineItem: alt.lineItem,
+            transaction: u.transaction,
+            sheetName: alt.sheetName,
+            confidence: alt.score,
+            matchReason: `Manually resolved (score: ${(alt.score * 100).toFixed(0)}%)`
+          });
+          continue;
+        }
+      }
+      stillUnmatched.push(u);
+    }
+
+    return { resolvedMatches, stillUnmatched };
+  };
+
+  if (primaryRule) {
+    const lineItems = getInvoiceLineItems(pricelist.template_structure);
+    const ruleMatches: any[] = [];
+    const ruleUnmatched: any[] = [];
+
+    for (const transaction of transactions) {
+      try {
+        const result = await RuleEngine.evaluateRule(primaryRule, {
+          transaction,
+          lineItems,
+          templateStructure: pricelist.template_structure,
+          previousResults: {}
+        });
+
+        if (result.success && result.data.matchedLineItem) {
+          const matched = result.data.matchedLineItem;
+          ruleMatches.push({
+            lineItem: matched,
+            transaction,
+            sheetName: matched.sheetName || '',
+            confidence: result.data.matches?.[0]?.confidence ?? 0.9,
+            matchReason: `Rule match: ${primaryRule.name} v${primaryRule.version}`
+          });
+        } else {
+          ruleUnmatched.push(transaction);
+        }
+      } catch {
+        ruleUnmatched.push(transaction);
+      }
+    }
+
+    const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(
+      ruleUnmatched,
+      pricelist.template_structure,
+      pricelistBuffer
+    );
+    const { resolvedMatches, stillUnmatched } = applyManualResolutions(dmUnmatched);
+
+    return {
+      matches: [...ruleMatches, ...dmMatches, ...resolvedMatches],
+      unmatched: stillUnmatched,
+      activeRule: primaryRule
+    };
+  }
+
+  const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(
+    transactions,
+    pricelist.template_structure,
+    pricelistBuffer
+  );
+  const { resolvedMatches, stillUnmatched } = applyManualResolutions(dmUnmatched);
+
+  return {
+    matches: [...dmMatches, ...resolvedMatches],
+    unmatched: stillUnmatched,
+    activeRule: null
+  };
+}
+
+// Export matched/unmatched + raw Tableau sheets using the same matching pipeline as preview/generate.
 router.post('/export-total', async (req, res) => {
   try {
-    const { pricelist_id, start_date, end_date } = req.body;
+    const { pricelist_id, start_date, end_date, resolvedItems, use_excel_data = true } = req.body;
 
     if (!pricelist_id || !start_date || !end_date) {
       return res.status(400).json({
@@ -129,22 +261,34 @@ router.post('/export-total', async (req, res) => {
     // Retrieve pricelist file from SharePoint or local storage
     const pricelistBuffer = await pricelistStorage.retrieveFile(pricelist.file_path);
 
-    const tableauClient = new TableauAPIClient();
-    const { transactions, rawViewData } = await tableauClient.fetchTransactionsWithRawData(
+    const { transactions, rawViewData } = await loadBillingTransactions(
+      pricelist,
+      pricelistBuffer,
       start_date,
       end_date,
-      pricelist.customer_name,
-      pricelist.warehouse_code
+      use_excel_data
     );
 
-    const { matches, unmatched } = DataMapper.mapTransactions(
+    if (transactions.length === 0) {
+      return res.status(422).json({
+        error: 'no_transaction_data',
+        message: `No transactions found for ${pricelist.customer_name} / ${pricelist.warehouse_code} between ${start_date} and ${end_date}. Check the date range and confirm data is available in the pricelist file or Tableau.`
+      });
+    }
+
+    const { matches, unmatched, activeRule } = await matchTransactionsForBilling(
+      pricelist,
+      pricelistBuffer,
       transactions,
-      pricelist.template_structure,
-      pricelistBuffer
+      resolvedItems
     );
 
     const matchedRows = (matches || []).map((m: any) => ({
       status: 'Matched',
+      matchedBy: m.matchReason?.startsWith('Rule match') ? 'rule_engine'
+        : m.matchReason?.startsWith('Manually') ? 'manual_resolution'
+        : 'data_mapper',
+      activeRule: activeRule ? `${activeRule.name} v${activeRule.version}` : '',
       transactionId: m.transaction?.id ?? '',
       date: m.transaction?.date ?? '',
       orderNumber: m.transaction?.orderNumber ?? '',
@@ -164,7 +308,9 @@ router.post('/export-total', async (req, res) => {
     }));
 
     const unmatchedRows = (unmatched || []).map((u: any) => ({
-      status: 'Unmatched',
+      status: u.needsReview ? 'Needs Review' : 'Unmatched',
+      matchedBy: '',
+      activeRule: activeRule ? `${activeRule.name} v${activeRule.version}` : '',
       transactionId: u.transaction?.id ?? '',
       date: u.transaction?.date ?? '',
       orderNumber: u.transaction?.orderNumber ?? '',
@@ -180,7 +326,7 @@ router.post('/export-total', async (req, res) => {
       remark: '',
       rate: '',
       confidence: '',
-      reason: u.reason ?? ''
+      reason: u.reviewReason ?? u.reason ?? ''
     }));
 
     const allRows = [...matchedRows, ...unmatchedRows];
