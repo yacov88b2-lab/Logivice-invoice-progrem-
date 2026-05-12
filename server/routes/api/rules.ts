@@ -485,7 +485,7 @@ Return ONLY a JSON object in this exact format — no prose, no markdown fences:
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
+        max_tokens: 2048,
         system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userContent }]
       })
@@ -510,11 +510,20 @@ Return ONLY a JSON object in this exact format — no prose, no markdown fences:
     const data: any = await response.json();
     const raw = data?.content?.[0]?.text ?? '';
 
+    // Strip markdown code fences if the model wrapped its output
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+
     let parsed: { steps: any[]; explanation: string };
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(cleaned);
     } catch {
-      return res.status(502).json({ error: 'Model returned non-JSON output', raw });
+      // Last resort: extract the outermost JSON object
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      try {
+        parsed = match ? JSON.parse(match[0]) : (() => { throw new Error(); })();
+      } catch {
+        return res.status(502).json({ error: 'Model returned non-JSON output', raw });
+      }
     }
 
     if (!Array.isArray(parsed.steps)) {
