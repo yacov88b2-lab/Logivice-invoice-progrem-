@@ -3,7 +3,6 @@ export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/a
 const getErrorMessage = async (res: Response, fallback: string) => {
   try {
     const data = await res.json();
-    if (data?.details) return String(data.details);
     if (data?.error) return String(data.error);
   } catch {
     // ignore

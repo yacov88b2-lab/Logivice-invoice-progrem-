@@ -492,9 +492,19 @@ Return ONLY a JSON object in this exact format — no prose, no markdown fences:
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      console.error('[RuleAssistant] Anthropic API error:', err);
-      return res.status(502).json({ error: 'Anthropic API request failed', details: err });
+      const errText = await response.text();
+      console.error('[RuleAssistant] Anthropic API error:', errText);
+      let friendlyMessage = 'Anthropic API request failed';
+      try {
+        const errJson = JSON.parse(errText);
+        const msg: string = errJson?.error?.message ?? '';
+        if (msg.toLowerCase().includes('credit')) {
+          friendlyMessage = 'The AI feature is unavailable — Anthropic account credits are exhausted. Please top up at console.anthropic.com.';
+        } else if (msg) {
+          friendlyMessage = `Anthropic API error: ${msg}`;
+        }
+      } catch { /* ignore parse error */ }
+      return res.status(502).json({ error: friendlyMessage });
     }
 
     const data: any = await response.json();
