@@ -1029,17 +1029,21 @@ export class TableauAPIClient {
 
       const headers = await this.getAuthHeaders();
 
-      // Try filtered search first (fast path)
+      // Try filtered search first (fast path) — by display name, then by contentUrl
       let workbook: any = null;
-      const filterUrl = `${this.baseUrl}/api/3.19/sites/${siteId}/workbooks?pageSize=100&filter=name:eq:${encodeURIComponent(workbookName)}`;
-      const filterRes = await fetch(filterUrl, { headers });
-      if (filterRes.ok) {
-        const data = await filterRes.json() as any;
-        workbook = (data.workbooks?.workbook ?? [])[0] ?? null;
+      for (const filterField of ['name', 'contentUrl']) {
+        if (workbook) break;
+        const filterUrl = `${this.baseUrl}/api/3.19/sites/${siteId}/workbooks?pageSize=100&filter=${filterField}:eq:${encodeURIComponent(workbookName)}`;
+        const filterRes = await fetch(filterUrl, { headers });
+        if (filterRes.ok) {
+          const data = await filterRes.json() as any;
+          workbook = (data.workbooks?.workbook ?? [])[0] ?? null;
+        }
       }
 
-      // Fallback: page through all workbooks
+      // Fallback: page through all workbooks, match by display name or contentUrl
       if (!workbook) {
+        const nameLower = workbookName.toLowerCase();
         for (let page = 1; page <= 10 && !workbook; page++) {
           const res = await fetch(
             `${this.baseUrl}/api/3.19/sites/${siteId}/workbooks?pageSize=100&pageNumber=${page}`,
@@ -1048,7 +1052,10 @@ export class TableauAPIClient {
           if (!res.ok) break;
           const data = await res.json() as any;
           const books: any[] = data.workbooks?.workbook ?? [];
-          workbook = books.find(w => w.name?.toLowerCase() === workbookName.toLowerCase()) ?? null;
+          workbook = books.find(w =>
+            w.name?.toLowerCase() === nameLower ||
+            w.contentUrl?.toLowerCase() === nameLower
+          ) ?? null;
           if (books.length < 100) break;
         }
       }
