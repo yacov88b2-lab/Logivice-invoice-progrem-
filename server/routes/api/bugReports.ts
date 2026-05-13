@@ -34,14 +34,31 @@ const upload = multer({
   },
 });
 
+const ALLOWED_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
+const ALLOWED_STATUSES = ['open', 'in_progress', 'resolved'] as const;
+const MAX_CONTEXT_LENGTH = 12000;
+
+function publicReport(row: any) {
+  if (!row) return row;
+  const { screenshot_path: screenshotPath, ...rest } = row;
+  return {
+    ...rest,
+    has_screenshot: Boolean(screenshotPath),
+  };
+}
+
 router.get('/', (req, res) => {
   try {
     const status = req.query.status as string | undefined;
+    if (status && !ALLOWED_STATUSES.includes(status as any)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
     const stmt = status
       ? db.prepare('SELECT * FROM bug_reports WHERE status = ? ORDER BY created_at DESC')
       : db.prepare('SELECT * FROM bug_reports ORDER BY created_at DESC');
     const reports = status ? stmt.all(status) : stmt.all();
-    res.json(reports);
+    res.json(reports.map(publicReport));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch bug reports', details: (error as Error).message });
   }
@@ -56,6 +73,18 @@ router.post('/', upload.single('screenshot'), (req, res) => {
       return res.status(400).json({ error: 'title and description are required' });
     }
 
+    const safeSeverity = severity || 'medium';
+    if (!ALLOWED_SEVERITIES.includes(safeSeverity as any)) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Invalid severity' });
+    }
+
+    const safeContext = context ? String(context) : null;
+    if (safeContext && safeContext.length > MAX_CONTEXT_LENGTH) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'context is too large' });
+    }
+
     const screenshotPath = req.file ? req.file.path : null;
 
     const result = db.prepare(
@@ -65,14 +94,14 @@ router.post('/', upload.single('screenshot'), (req, res) => {
       String(title).trim(),
       String(description).trim(),
       page ? String(page).trim() : null,
-      severity || 'medium',
+      safeSeverity,
       reported_by ? String(reported_by).trim() : null,
       screenshotPath,
-      context ? String(context) : null
+      safeContext
     );
 
     const report = db.prepare('SELECT * FROM bug_reports WHERE id = ?').get(result.lastInsertRowid);
-    res.status(201).json(report);
+    res.status(201).json(publicReport(report));
   } catch (error) {
     if (req.file) {
       try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
@@ -85,13 +114,13 @@ router.patch('/:id/status', (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { status } = req.body;
-    if (!['open', 'in_progress', 'resolved'].includes(status)) {
+    if (!ALLOWED_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
     db.prepare('UPDATE bug_reports SET status = ? WHERE id = ?').run(status, id);
     const report = db.prepare('SELECT * FROM bug_reports WHERE id = ?').get(id);
     if (!report) return res.status(404).json({ error: 'Report not found' });
-    res.json(report);
+    res.json(publicReport(report));
   } catch (error) {
     res.status(500).json({ error: 'Failed to update status', details: (error as Error).message });
   }

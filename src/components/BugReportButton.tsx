@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import html2canvas from 'html2canvas';
 import { api } from '../api';
 import { toast } from '../toast';
 
@@ -41,6 +40,7 @@ export function BugReportButton() {
     setCapturing(true);
     setError(null);
     try {
+      const { default: html2canvas } = await import('html2canvas');
       const canvas = await html2canvas(document.body, {
         useCORS: true,
         logging: false,
