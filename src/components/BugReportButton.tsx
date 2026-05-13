@@ -1,10 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import html2canvas from 'html2canvas';
 import { api } from '../api';
 import { toast } from '../toast';
+
+const MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024; // 4 MB client-side limit (server is 5 MB)
 
 export function BugReportButton() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', severity: 'medium', reported_by: '' });
+  const [screenshot, setScreenshot] = useState<Blob | null>(null);
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     toast.onReportBug((errorMessage: string) => {
@@ -17,11 +27,53 @@ export function BugReportButton() {
       setOpen(true);
     });
   }, []);
-  const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  // Revoke object URL on unmount / screenshot change
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
+  }, []);
 
   const currentPage = window.location.pathname + window.location.hash;
+
+  const captureScreen = async () => {
+    setCapturing(true);
+    setError(null);
+    try {
+      const canvas = await html2canvas(document.body, {
+        useCORS: true,
+        logging: false,
+        // Exclude the modal overlay itself from the capture
+        ignoreElements: el => el.id === 'bug-report-modal',
+      });
+      const blob = await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas toBlob failed')), 'image/png', 0.8)
+      );
+      if (blob.size > MAX_SCREENSHOT_BYTES) {
+        setError(`Screenshot is too large (${(blob.size / 1024 / 1024).toFixed(1)} MB). Maximum is 4 MB.`);
+        return;
+      }
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      const url = URL.createObjectURL(blob);
+      previewUrlRef.current = url;
+      setScreenshot(blob);
+      setScreenshotUrl(url);
+    } catch {
+      setError('Screen capture failed. You can still submit without a screenshot.');
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  const removeScreenshot = () => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    setScreenshot(null);
+    setScreenshotUrl(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,12 +84,19 @@ export function BugReportButton() {
     try {
       setLoading(true);
       setError(null);
+      const context = JSON.stringify({
+        userAgent: navigator.userAgent,
+        timestamp: new Date().toISOString(),
+        route: currentPage,
+      });
       await api.reportBug({
         title: form.title,
         description: form.description,
         severity: form.severity,
         reported_by: form.reported_by || undefined,
         page: currentPage,
+        context,
+        screenshot: screenshot ?? undefined,
       });
       setSubmitted(true);
     } catch (err) {
@@ -52,6 +111,7 @@ export function BugReportButton() {
     setSubmitted(false);
     setForm({ title: '', description: '', severity: 'medium', reported_by: '' });
     setError(null);
+    removeScreenshot();
   };
 
   return (
@@ -68,8 +128,8 @@ export function BugReportButton() {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-xl">
+        <div id="bug-report-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <h2 className="text-base font-semibold text-slate-950">Report a Bug</h2>
               <button onClick={handleClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">&times;</button>
@@ -136,6 +196,46 @@ export function BugReportButton() {
                   </div>
                 </div>
 
+                {/* Screenshot section */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">Screenshot</span>
+                    {!screenshotUrl && (
+                      <button
+                        type="button"
+                        onClick={captureScreen}
+                        disabled={capturing}
+                        className="rounded border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        {capturing ? 'Capturing…' : 'Capture screen'}
+                      </button>
+                    )}
+                    {screenshotUrl && (
+                      <button
+                        type="button"
+                        onClick={removeScreenshot}
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  {screenshotUrl ? (
+                    <img
+                      src={screenshotUrl}
+                      alt="Screenshot preview"
+                      className="w-full rounded border border-slate-200 object-contain max-h-40"
+                    />
+                  ) : (
+                    <p className="text-xs text-slate-500">Optional. Captures only this app's current page — not your full screen.</p>
+                  )}
+
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                    The screenshot may include invoice data, customer names, or other business information.
+                  </p>
+                </div>
+
                 <p className="text-xs text-slate-400">Page: {currentPage}</p>
 
                 {error && (
@@ -148,7 +248,7 @@ export function BugReportButton() {
                     disabled={loading}
                     className="flex-1 rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                   >
-                    {loading ? 'Submitting...' : 'Submit Report'}
+                    {loading ? 'Submitting…' : 'Submit Report'}
                   </button>
                   <button
                     type="button"

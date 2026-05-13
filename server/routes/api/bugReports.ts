@@ -1,7 +1,38 @@
 import express from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import db from '../../db';
 
 const router = express.Router();
+
+const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024; // 5 MB
+
+const screenshotDir = path.join(
+  process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(process.cwd(), 'data'),
+  'uploads',
+  'bug-reports'
+);
+if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, screenshotDir),
+  filename: (_req, _file, cb) => {
+    const safe = `bug-${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
+    cb(null, safe);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_SCREENSHOT_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype)) {
+      return cb(new Error('Only PNG, JPEG, or WebP screenshots are accepted'));
+    }
+    cb(null, true);
+  },
+});
 
 router.get('/', (req, res) => {
   try {
@@ -16,24 +47,36 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', upload.single('screenshot'), (req, res) => {
+  // Multer populates req.body for multipart; also accept plain JSON
   try {
-    const { title, description, page, severity, reported_by } = req.body;
+    const { title, description, page, severity, reported_by, context } = req.body;
     if (!title || !description) {
+      if (req.file) fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: 'title and description are required' });
     }
+
+    const screenshotPath = req.file ? req.file.path : null;
+
     const result = db.prepare(
-      'INSERT INTO bug_reports (title, description, page, severity, reported_by) VALUES (?, ?, ?, ?, ?)'
+      `INSERT INTO bug_reports (title, description, page, severity, reported_by, screenshot_path, context)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(
       String(title).trim(),
       String(description).trim(),
       page ? String(page).trim() : null,
       severity || 'medium',
-      reported_by ? String(reported_by).trim() : null
+      reported_by ? String(reported_by).trim() : null,
+      screenshotPath,
+      context ? String(context) : null
     );
+
     const report = db.prepare('SELECT * FROM bug_reports WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(report);
   } catch (error) {
+    if (req.file) {
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+    }
     res.status(500).json({ error: 'Failed to submit bug report', details: (error as Error).message });
   }
 });

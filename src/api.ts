@@ -286,12 +286,35 @@ export const api = {
   },
 
   // Bug reports
-  reportBug: async (report: { title: string; description: string; page?: string; severity?: string; reported_by?: string }) => {
-    const res = await fetch(`${API_BASE}/bug-reports`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(report),
-    });
+  reportBug: async (report: {
+    title: string;
+    description: string;
+    page?: string;
+    severity?: string;
+    reported_by?: string;
+    context?: string;
+    screenshot?: Blob;
+  }) => {
+    let body: BodyInit;
+    let headers: Record<string, string> = {};
+
+    if (report.screenshot) {
+      const fd = new FormData();
+      fd.append('title', report.title);
+      fd.append('description', report.description);
+      if (report.page) fd.append('page', report.page);
+      if (report.severity) fd.append('severity', report.severity);
+      if (report.reported_by) fd.append('reported_by', report.reported_by);
+      if (report.context) fd.append('context', report.context);
+      fd.append('screenshot', report.screenshot, 'screenshot.png');
+      body = fd;
+    } else {
+      const { screenshot: _s, ...rest } = report;
+      body = JSON.stringify(rest);
+      headers['Content-Type'] = 'application/json';
+    }
+
+    const res = await fetch(`${API_BASE}/bug-reports`, { method: 'POST', headers, body });
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to submit bug report'));
     return res.json();
   },

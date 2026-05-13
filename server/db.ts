@@ -377,6 +377,14 @@ export function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  // Add screenshot_path and context columns if not present (migration for existing DBs)
+  const bugReportCols = (db.prepare('PRAGMA table_info(bug_reports)').all() as { name: string }[]).map(c => c.name);
+  if (!bugReportCols.includes('screenshot_path')) {
+    db.exec('ALTER TABLE bug_reports ADD COLUMN screenshot_path TEXT');
+  }
+  if (!bugReportCols.includes('context')) {
+    db.exec('ALTER TABLE bug_reports ADD COLUMN context TEXT');
+  }
 
   // Match-level audit trail — one row per matched transaction per invoice run.
   // Allows post-hoc reconstruction of "why did transaction X go to line Y?"
