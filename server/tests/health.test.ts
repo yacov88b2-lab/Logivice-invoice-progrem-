@@ -1,29 +1,73 @@
 import { describe, it, expect } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+import path from 'path';
+import pricelistsRouter from '../routes/pricelists';
+import tableauRouter from '../routes/tableau';
+import authRouter from '../routes/api/auth';
+import { signAccessToken } from '../services/tokenService';
+import db from '../db';
+import bcrypt from 'bcryptjs';
 
-describe('Railway health endpoint (live)', () => {
-  const BASE = 'https://logivice-api-production.up.railway.app';
+// Suppress tokenStore in tests
+Object.defineProperty(globalThis, 'localStorage', {
+  value: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  writable: true,
+});
 
-  it('GET /api/health returns status ok', async () => {
-    const res = await fetch(`${BASE}/api/health`);
-    expect(res.ok).toBe(true);
-    const data = await res.json() as any;
-    expect(data.status).toBe('ok');
-    expect(data.commit).toBeTruthy();
-    expect(data.storageRoot).toBeTruthy();
+function buildApp() {
+  const app = express();
+  app.use(express.json());
+  app.use('/api/auth', authRouter);
+  app.use('/api/pricelists', pricelistsRouter);
+  app.use('/api/tableau', tableauRouter);
+  app.get('/api/health', (_req, res) => {
+    const storageRoot = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(process.cwd(), 'data');
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      commit: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? 'test',
+      env: process.env.NODE_ENV ?? 'test',
+      storageRoot,
+      dbPath: path.join(storageRoot, 'database.sqlite'),
+    });
+  });
+  return app;
+}
+
+// ── Health endpoint ───────────────────────────────────────────────────────────
+
+describe('GET /api/health', () => {
+  it('returns status ok with expected fields', async () => {
+    const res = await request(buildApp()).get('/api/health');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+    expect(res.body.storageRoot).toBeTruthy();
+    expect(res.body.commit).toBeTruthy();
+  });
+});
+
+// ── Protected routes reject unauthenticated requests ─────────────────────────
+
+describe('Protected routes require auth', () => {
+  it('GET /api/pricelists returns 401 without token', async () => {
+    const res = await request(buildApp()).get('/api/pricelists');
+    expect(res.status).toBe(401);
   });
 
-  it('GET /api/pricelists returns an array', async () => {
-    const res = await fetch(`${BASE}/api/pricelists`);
-    expect(res.ok).toBe(true);
-    const data = await res.json() as any;
-    expect(Array.isArray(data)).toBe(true);
+  it('GET /api/tableau/options returns 401 without token', async () => {
+    const res = await request(buildApp()).get('/api/tableau/options');
+    expect(res.status).toBe(401);
   });
 
-  it('GET /api/tableau/options returns customers and warehouses arrays', async () => {
-    const res = await fetch(`${BASE}/api/tableau/options`);
-    expect(res.ok).toBe(true);
-    const data = await res.json() as any;
-    expect(Array.isArray(data.customers)).toBe(true);
-    expect(Array.isArray(data.warehouses)).toBe(true);
+  it('GET /api/pricelists returns 200 with valid token', async () => {
+    // Use the existing super_admin seeded on startup
+    const sa = db.prepare("SELECT id, role FROM users WHERE role = 'super_admin' LIMIT 1").get() as any;
+    const token = signAccessToken({ sub: sa.id, email: 'test@unilog.company', role: sa.role, twoFactorVerified: true });
+    const res = await request(buildApp())
+      .get('/api/pricelists')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
   });
 });

@@ -225,37 +225,43 @@ function migrateUsersTable(): void {
 // Exported for direct use in tests. emailOverride / rawPassword bypass env vars.
 
 export function ensureSuperAdmin(emailOverride?: string, rawPassword?: string): void {
+  const isProductionLike = !['development', 'test'].includes(process.env.NODE_ENV ?? '');
   const superAdminEmail = (
     emailOverride ?? process.env.SUPER_ADMIN_EMAIL ?? 'Jacob.b@unilog.company'
   ).trim().toLowerCase();
 
   const existing = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(superAdminEmail) as any;
 
+  // rawPassword is provided only in tests; production always uses the env var.
+  const effectivePassword = rawPassword ?? process.env.SUPER_ADMIN_PASSWORD;
+
+  // A password write is needed when: creating a new user, or the existing user has no password.
+  const needsPasswordWrite = !existing || !Boolean(existing.password_hash);
+
+  if (isProductionLike && needsPasswordWrite && !effectivePassword) {
+    console.error('[DB] SUPER_ADMIN_PASSWORD is required in production/staging to seed super admin');
+    process.exit(1);
+  }
+
   if (existing) {
     const hasPassword = Boolean(existing.password_hash);
     if (existing.role === 'super_admin' && existing.status === 'active' && hasPassword) return;
 
-    if (!hasPassword) {
-      // User was invited but never set a password — set it now
-      const pw = rawPassword ?? process.env.SUPER_ADMIN_PASSWORD;
-      if (pw) {
-        db.prepare(
-          "UPDATE users SET email = ?, role = 'super_admin', status = 'active', password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?"
-        ).run(superAdminEmail, bcrypt.hashSync(pw, 12), superAdminEmail);
-      } else {
-        db.prepare(
-          "UPDATE users SET email = ?, role = 'super_admin', status = 'active', updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?"
-        ).run(superAdminEmail, superAdminEmail);
-      }
+    if (!hasPassword && effectivePassword) {
+      db.prepare(
+        "UPDATE users SET email = ?, role = 'super_admin', status = 'active', password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?"
+      ).run(superAdminEmail, bcrypt.hashSync(effectivePassword, 12), superAdminEmail);
     } else {
-      // User has a password — promote/activate, leave password alone
+      // User already has a password — promote/activate, leave password alone
       db.prepare(
         "UPDATE users SET email = ?, role = 'super_admin', status = 'active', updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?"
       ).run(superAdminEmail, superAdminEmail);
     }
     console.log(`[DB] Super admin ensured — email: ${superAdminEmail}`);
   } else {
-    const pw = rawPassword ?? process.env.SUPER_ADMIN_PASSWORD ??
+    // In production, effectivePassword is guaranteed non-null (checked above).
+    // In development without env var, fall back to a random password (local use only).
+    const pw = effectivePassword ??
       Array.from(crypto.getRandomValues(new Uint8Array(16)))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
