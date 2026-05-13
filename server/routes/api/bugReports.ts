@@ -8,6 +8,12 @@ const router = express.Router();
 
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024; // 5 MB
 
+const MAX_TITLE_LENGTH       = 200;
+const MAX_DESCRIPTION_LENGTH = 10_000;
+const MAX_REPORTED_BY_LENGTH = 100;
+const MAX_PAGE_LENGTH        = 500;
+const MAX_CONTEXT_LENGTH     = 12_000;
+
 const screenshotDir = path.join(
   process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(process.cwd(), 'data'),
   'uploads',
@@ -35,25 +41,34 @@ const upload = multer({
 });
 
 const ALLOWED_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
-const ALLOWED_STATUSES = ['open', 'in_progress', 'resolved'] as const;
-const MAX_CONTEXT_LENGTH = 12000;
+const ALLOWED_STATUSES   = ['open', 'in_progress', 'resolved']   as const;
 
 function publicReport(row: any) {
   if (!row) return row;
   const { screenshot_path: screenshotPath, ...rest } = row;
-  return {
-    ...rest,
-    has_screenshot: Boolean(screenshotPath),
-  };
+  return { ...rest, has_screenshot: Boolean(screenshotPath) };
+}
+
+// Runs multer, converts its errors to 400 responses.
+function runUpload(req: express.Request, res: express.Response): Promise<void> {
+  return new Promise((resolve, reject) => {
+    upload.single('screenshot')(req, res, (err: any) => {
+      if (!err) return resolve();
+      const isFileTooLarge = err.code === 'LIMIT_FILE_SIZE';
+      const msg = isFileTooLarge
+        ? `Screenshot is too large. Maximum is ${MAX_SCREENSHOT_BYTES / 1024 / 1024} MB.`
+        : (err.message || 'Screenshot upload failed');
+      reject({ status: 400, message: msg });
+    });
+  });
 }
 
 router.get('/', (req, res) => {
   try {
     const status = req.query.status as string | undefined;
     if (status && !ALLOWED_STATUSES.includes(status as any)) {
-      return res.status(400).json({ error: 'Invalid status' });
+      return res.status(400).json({ error: 'Invalid status filter' });
     }
-
     const stmt = status
       ? db.prepare('SELECT * FROM bug_reports WHERE status = ? ORDER BY created_at DESC')
       : db.prepare('SELECT * FROM bug_reports ORDER BY created_at DESC');
@@ -64,13 +79,28 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/', upload.single('screenshot'), (req, res) => {
-  // Multer populates req.body for multipart; also accept plain JSON
+router.post('/', async (req, res) => {
+  try {
+    await runUpload(req, res);
+  } catch (uploadErr: any) {
+    return res.status(uploadErr.status ?? 400).json({ error: uploadErr.message });
+  }
+
   try {
     const { title, description, page, severity, reported_by, context } = req.body;
+
     if (!title || !description) {
       if (req.file) fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: 'title and description are required' });
+    }
+
+    if (String(title).trim().length > MAX_TITLE_LENGTH) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: `title must be ${MAX_TITLE_LENGTH} characters or fewer` });
+    }
+    if (String(description).trim().length > MAX_DESCRIPTION_LENGTH) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: `description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer` });
     }
 
     const safeSeverity = severity || 'medium';
@@ -85,7 +115,8 @@ router.post('/', upload.single('screenshot'), (req, res) => {
       return res.status(400).json({ error: 'context is too large' });
     }
 
-    const screenshotPath = req.file ? req.file.path : null;
+    const safeReportedBy = reported_by ? String(reported_by).trim().slice(0, MAX_REPORTED_BY_LENGTH) : null;
+    const safePage       = page        ? String(page).trim().slice(0, MAX_PAGE_LENGTH)               : null;
 
     const result = db.prepare(
       `INSERT INTO bug_reports (title, description, page, severity, reported_by, screenshot_path, context)
@@ -93,10 +124,10 @@ router.post('/', upload.single('screenshot'), (req, res) => {
     ).run(
       String(title).trim(),
       String(description).trim(),
-      page ? String(page).trim() : null,
+      safePage,
       safeSeverity,
-      reported_by ? String(reported_by).trim() : null,
-      screenshotPath,
+      safeReportedBy,
+      req.file ? req.file.path : null,
       safeContext
     );
 

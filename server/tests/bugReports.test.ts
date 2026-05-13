@@ -225,4 +225,77 @@ describe('bug report API route', () => {
     expect(row.has_screenshot).toBe(true);
     expect(row.screenshot_path).toBeUndefined();
   });
+
+  it('rejects missing title/description with 400', async () => {
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .send({ description: 'No title here' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/title/i);
+  });
+
+  it('rejects title exceeding 200 chars with 400', async () => {
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .send({ title: 'x'.repeat(201), description: 'ok' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/title/i);
+  });
+
+  it('rejects description exceeding 10000 chars with 400', async () => {
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .send({ title: 'ok', description: 'd'.repeat(10_001) });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/description/i);
+  });
+
+  it('rejects context exceeding 12000 chars with 400', async () => {
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .send({ title: 'ok', description: 'ok', context: 'c'.repeat(12_001) });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/context/i);
+  });
+
+  it('rejects non-image MIME type with 400', async () => {
+    const pdfBytes = Buffer.from('%PDF-1.4');
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .field('title', 'MIME test')
+      .field('description', 'Should reject')
+      .attach('screenshot', pdfBytes, { filename: 'evil.pdf', contentType: 'application/pdf' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/PNG|JPEG|WebP/i);
+  });
+
+  it('rejects oversized screenshot with 400', async () => {
+    const sixMB = Buffer.alloc(6 * 1024 * 1024, 0x00);
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .field('title', 'Big file')
+      .field('description', 'Too large')
+      .attach('screenshot', sixMB, { filename: 'big.png', contentType: 'image/png' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/too large|maximum/i);
+  });
+
+  it('PATCH status update response does not expose screenshot_path', async () => {
+    const id = insertBugReport({ screenshot_path: '/private/path.png' });
+    createdIds.push(id);
+
+    const res = await request(buildApp())
+      .patch(`/api/bug-reports/${id}/status`)
+      .send({ status: 'resolved' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('resolved');
+    expect(res.body.screenshot_path).toBeUndefined();
+    expect(res.body.has_screenshot).toBe(true);
+  });
+
+  it('rejects invalid status filter on GET with 400', async () => {
+    const res = await request(buildApp()).get('/api/bug-reports?status=hacked');
+    expect(res.status).toBe(400);
+  });
 });
