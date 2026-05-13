@@ -56,15 +56,17 @@ app.get('/', (req, res) => {
   });
 });
 
-// Production security checks — fail fast before accepting traffic
-if (process.env.NODE_ENV === 'production') {
+// Production/staging security checks — fail fast before accepting traffic.
+// Any NODE_ENV that isn't 'development' or 'test' is treated as production-like.
+const isProductionLike = !['development', 'test'].includes(process.env.NODE_ENV ?? '');
+if (isProductionLike) {
   const missingEnvVars: string[] = [];
   if (!process.env.SUPER_ADMIN_PASSWORD) missingEnvVars.push('SUPER_ADMIN_PASSWORD');
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-in-production') {
     missingEnvVars.push('JWT_SECRET');
   }
   if (missingEnvVars.length > 0) {
-    console.error(`[STARTUP] Missing required env vars in production: ${missingEnvVars.join(', ')}`);
+    console.error(`[STARTUP] Missing required env vars: ${missingEnvVars.join(', ')}`);
     process.exit(1);
   }
 }

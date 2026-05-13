@@ -85,9 +85,19 @@ describe('GET /api/users', () => {
 // ── POST /users ───────────────────────────────────────────────────────────────
 
 describe('POST /api/users', () => {
-  it('creates a user when admin', async () => {
+  it('returns 403 for admin (direct create is super_admin only)', async () => {
     const adminId = insertUser({ role: 'admin' });
     const token = tokenFor(adminId, 'admin');
+    const res = await request(buildApp())
+      .post('/api/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ email: `new-${Date.now()}@unilog.company`, role: 'user', password: 'Secure123!' });
+    expect(res.status).toBe(403);
+  });
+
+  it('creates a user when super_admin', async () => {
+    const saId = insertUser({ role: 'super_admin' });
+    const token = tokenFor(saId, 'super_admin');
 
     const email = `new-${Date.now()}@unilog.company`;
     const res = await request(buildApp())
@@ -102,8 +112,8 @@ describe('POST /api/users', () => {
   });
 
   it('returns 403 for non-unilog.company email', async () => {
-    const adminId = insertUser({ role: 'admin' });
-    const token = tokenFor(adminId, 'admin');
+    const saId = insertUser({ role: 'super_admin' });
+    const token = tokenFor(saId, 'super_admin');
     const res = await request(buildApp())
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
@@ -112,10 +122,10 @@ describe('POST /api/users', () => {
   });
 
   it('returns 409 for duplicate email', async () => {
-    const adminId = insertUser({ role: 'admin' });
+    const saId = insertUser({ role: 'super_admin' });
     const dupEmail = `dup-${Date.now()}@unilog.company`;
     insertUser({ email: dupEmail, role: 'user' });
-    const token = tokenFor(adminId, 'admin');
+    const token = tokenFor(saId, 'super_admin');
 
     const res = await request(buildApp())
       .post('/api/users')
@@ -124,9 +134,9 @@ describe('POST /api/users', () => {
     expect(res.status).toBe(409);
   });
 
-  it('returns 403 when trying to create user with higher role', async () => {
-    const adminId = insertUser({ role: 'admin' });
-    const token = tokenFor(adminId, 'admin');
+  it('returns 403 when trying to create user with equal role (super_admin)', async () => {
+    const saId = insertUser({ role: 'super_admin' });
+    const token = tokenFor(saId, 'super_admin');
     const res = await request(buildApp())
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
@@ -135,8 +145,8 @@ describe('POST /api/users', () => {
   });
 
   it('returns 400 for password shorter than 8 chars', async () => {
-    const adminId = insertUser({ role: 'admin' });
-    const token = tokenFor(adminId, 'admin');
+    const saId = insertUser({ role: 'super_admin' });
+    const token = tokenFor(saId, 'super_admin');
     const res = await request(buildApp())
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)

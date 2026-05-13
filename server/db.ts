@@ -221,6 +221,51 @@ function migrateUsersTable(): void {
   console.log('[DB] Migrated users table to new schema (plaintext passwords cleared)');
 }
 
+// ── Super admin seed ──────────────────────────────────────────────────────────
+// Exported for direct use in tests. emailOverride / rawPassword bypass env vars.
+
+export function ensureSuperAdmin(emailOverride?: string, rawPassword?: string): void {
+  const superAdminEmail = (
+    emailOverride ?? process.env.SUPER_ADMIN_EMAIL ?? 'Jacob.b@unilog.company'
+  ).trim().toLowerCase();
+
+  const existing = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(superAdminEmail) as any;
+
+  if (existing) {
+    const hasPassword = Boolean(existing.password_hash);
+    if (existing.role === 'super_admin' && existing.status === 'active' && hasPassword) return;
+
+    if (!hasPassword) {
+      // User was invited but never set a password — set it now
+      const pw = rawPassword ?? process.env.SUPER_ADMIN_PASSWORD;
+      if (pw) {
+        db.prepare(
+          "UPDATE users SET email = ?, role = 'super_admin', status = 'active', password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?"
+        ).run(superAdminEmail, bcrypt.hashSync(pw, 12), superAdminEmail);
+      } else {
+        db.prepare(
+          "UPDATE users SET email = ?, role = 'super_admin', status = 'active', updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?"
+        ).run(superAdminEmail, superAdminEmail);
+      }
+    } else {
+      // User has a password — promote/activate, leave password alone
+      db.prepare(
+        "UPDATE users SET email = ?, role = 'super_admin', status = 'active', updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?"
+      ).run(superAdminEmail, superAdminEmail);
+    }
+    console.log(`[DB] Super admin ensured — email: ${superAdminEmail}`);
+  } else {
+    const pw = rawPassword ?? process.env.SUPER_ADMIN_PASSWORD ??
+      Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    db.prepare(
+      `INSERT INTO users (email, name, password_hash, role, status) VALUES (?, 'Super Admin', ?, 'super_admin', 'active')`
+    ).run(superAdminEmail, bcrypt.hashSync(pw, 12));
+    console.log(`[DB] Super admin created — email: ${superAdminEmail}`);
+  }
+}
+
 // Initialize tables
 export function initDatabase() {
   // Pricelists table
@@ -290,20 +335,27 @@ export function initDatabase() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_user_audit_logs_actor ON user_audit_logs(actor_user_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_user_audit_logs_action ON user_audit_logs(action)`);
 
-  // Seed super_admin if none exists
-  const existingSuperAdmin = db.prepare("SELECT id FROM users WHERE role = 'super_admin'").get();
-  if (!existingSuperAdmin) {
-    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'Jacob.b@unilog.company';
-    const rawPassword = process.env.SUPER_ADMIN_PASSWORD ||
-      Array.from(crypto.getRandomValues(new Uint8Array(16)))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-    const passwordHash = bcrypt.hashSync(rawPassword, 12);
-    db.prepare(
-      `INSERT OR IGNORE INTO users (email, name, password_hash, role, status) VALUES (?, 'Super Admin', ?, 'super_admin', 'active')`
-    ).run(superAdminEmail, passwordHash);
-    console.log(`[DB] Super admin created — email: ${superAdminEmail}`);
-  }
+  // User invites table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_invites (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      email TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('super_admin', 'admin', 'manager', 'user', 'viewer')),
+      name TEXT,
+      token_hash TEXT NOT NULL UNIQUE,
+      invited_by_user_id TEXT NOT NULL,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'revoked', 'expired')),
+      expires_at DATETIME NOT NULL,
+      accepted_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_user_invites_token_hash ON user_invites(token_hash)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_user_invites_email ON user_invites(email)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_user_invites_status ON user_invites(status)`);
+
+  ensureSuperAdmin();
 
   // Customer Rules table
   db.exec(`

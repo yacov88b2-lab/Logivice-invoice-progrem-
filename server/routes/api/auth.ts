@@ -1,12 +1,13 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import { createHash } from 'node:crypto';
 import { verifySync } from 'otplib';
 import db from '../../db';
 import { signAccessToken, verifyToken } from '../../services/tokenService';
 import { isAllowedEmail, normalizeEmail, getDomain } from '../../services/emailDomain';
 import { logAudit } from '../../services/auditService';
 import { requireAuth, type AuthenticatedRequest } from '../../middleware/auth';
-import { loginRateLimit, twoFactorRateLimit } from '../../middleware/rateLimit';
+import { loginRateLimit, twoFactorRateLimit, inviteAcceptRateLimit } from '../../middleware/rateLimit';
 
 const router = express.Router();
 
@@ -139,6 +140,70 @@ router.post('/logout', requireAuth, (req, res) => {
   logAudit({ actorId: sub, action: 'logout', req });
   // JWT is stateless; client deletes the token
   res.json({ ok: true });
+});
+
+// ── GET /auth/invite/:token ───────────────────────────────────────────────────
+
+router.get('/invite/:token', (req, res) => {
+  const tokenHash = createHash('sha256').update(req.params.token).digest('hex');
+  const invite = db.prepare('SELECT * FROM user_invites WHERE token_hash = ?').get(tokenHash) as any;
+
+  if (!invite) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  if (invite.status === 'revoked') return res.status(410).json({ error: 'This invite has been revoked' });
+  if (invite.status === 'accepted') return res.status(410).json({ error: 'This invite has already been used' });
+  if (invite.status === 'expired' || new Date(invite.expires_at) < new Date()) {
+    if (invite.status !== 'expired') {
+      db.prepare("UPDATE user_invites SET status = 'expired', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(invite.id);
+    }
+    return res.status(410).json({ error: 'This invite link has expired' });
+  }
+
+  res.json({ email: invite.email, name: invite.name, role: invite.role, expires_at: invite.expires_at });
+});
+
+// ── POST /auth/invite/:token/accept ──────────────────────────────────────────
+
+router.post('/invite/:token/accept', inviteAcceptRateLimit, (req, res) => {
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: 'password is required' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!/[A-Z]/.test(password)) return res.status(400).json({ error: 'Password must contain at least one uppercase letter' });
+  if (!/[0-9]/.test(password)) return res.status(400).json({ error: 'Password must contain at least one number' });
+
+  const tokenHash = createHash('sha256').update(req.params.token).digest('hex');
+  const invite = db.prepare('SELECT * FROM user_invites WHERE token_hash = ?').get(tokenHash) as any;
+
+  if (!invite) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  if (invite.status === 'revoked') return res.status(410).json({ error: 'This invite has been revoked' });
+  if (invite.status === 'accepted') return res.status(410).json({ error: 'This invite has already been used' });
+  if (invite.status === 'expired' || new Date(invite.expires_at) < new Date()) {
+    if (invite.status !== 'expired') {
+      db.prepare("UPDATE user_invites SET status = 'expired', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(invite.id);
+    }
+    return res.status(410).json({ error: 'This invite link has expired' });
+  }
+
+  const existingUser = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(invite.email) as any;
+  if (existingUser) {
+    return res.status(409).json({ error: 'An account with this email already exists' });
+  }
+
+  const passwordHash = bcrypt.hashSync(password, 12);
+
+  const accept = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO users (email, name, password_hash, role, status) VALUES (?, ?, ?, ?, 'active')`
+    ).run(invite.email, invite.name || null, passwordHash, invite.role);
+    const newUser = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(invite.email) as any;
+    db.prepare(
+      "UPDATE user_invites SET status = 'accepted', accepted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(invite.id);
+    return newUser;
+  });
+
+  const newUser = accept();
+  logAudit({ actorId: newUser.id, targetId: newUser.id, action: 'user_invite_accepted', metadata: { role: invite.role }, req });
+  res.json({ ok: true, message: 'Account created successfully. You can now log in.' });
 });
 
 // ── helpers ───────────────────────────────────────────────────────────────────

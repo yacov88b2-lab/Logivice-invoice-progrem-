@@ -127,6 +127,60 @@ export const api = {
     return res.json();
   },
 
+  inviteUser: async (data: { email: string; name?: string; role: string }) => {
+    const res = await fetch(`${API_BASE}/users/invite`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(data),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to send invite'));
+    return res.json() as Promise<{ invite: Record<string, unknown>; inviteLink: string }>;
+  },
+
+  getInvites: async () => {
+    const res = await fetch(`${API_BASE}/users/invites`, { headers: authHeaders() });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to fetch invites'));
+    return res.json();
+  },
+
+  revokeInvite: async (id: string) => {
+    const res = await fetch(`${API_BASE}/users/invites/${id}/revoke`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to revoke invite'));
+    return res.json();
+  },
+
+  resendInvite: async (id: string) => {
+    const res = await fetch(`${API_BASE}/users/invites/${id}/resend`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to resend invite'));
+    return res.json() as Promise<{ invite: Record<string, unknown>; inviteLink: string }>;
+  },
+
+  getInviteInfo: async (token: string) => {
+    const res = await fetch(`${API_BASE}/auth/invite/${token}`);
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Invalid or expired invite link'));
+    return res.json() as Promise<{ email: string; name: string | null; role: string; expires_at: string }>;
+  },
+
+  acceptInvite: async (token: string, password: string) => {
+    const res = await fetch(`${API_BASE}/auth/invite/${token}/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to create account'));
+    return res.json() as Promise<{ ok: boolean; message: string }>;
+  },
+
   resetUserPassword: async (id: string, newPassword: string) => {
     const res = await fetch(`${API_BASE}/users/${id}/reset-password`, {
       method: 'POST',

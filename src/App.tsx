@@ -6,6 +6,7 @@ import { UserDashboard } from './components/user/UserDashboard';
 import { UserManagement } from './components/admin/UserManagement';
 import { SecuritySettings } from './components/user/SecuritySettings';
 import { LoginPage } from './components/auth/LoginPage';
+import { InviteAcceptPage } from './components/auth/InviteAcceptPage';
 import { BugReportButton } from './components/BugReportButton';
 import { ToastContainer } from './components/ToastContainer';
 
@@ -103,6 +104,10 @@ function AppShell() {
 }
 
 function App() {
+  if (window.location.pathname === '/register/accept') {
+    const token = new URLSearchParams(window.location.search).get('token') ?? '';
+    return <InviteAcceptPage token={token} />;
+  }
   return (
     <AuthProvider>
       <AppShell />

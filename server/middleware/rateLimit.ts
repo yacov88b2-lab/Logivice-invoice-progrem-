@@ -20,6 +20,15 @@ export const twoFactorRateLimit = rateLimit({
   skip: () => isTest,
 });
 
+export const inviteAcceptRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: { error: 'Too many attempts. Please wait 15 minutes and try again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isTest,
+});
+
 export const generalApiRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 200,

@@ -1,5 +1,6 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import { randomBytes, createHash } from 'node:crypto';
 import db from '../../db';
 import { requireAuth, requireMinRole, type AuthenticatedRequest } from '../../middleware/auth';
 import { isAllowedEmail, normalizeEmail } from '../../services/emailDomain';
@@ -22,6 +23,11 @@ function publicUser(row: any) {
   return rest;
 }
 
+function publicInvite(row: any) {
+  const { token_hash: _t, ...rest } = row;
+  return rest;
+}
+
 function canManage(actorRole: Role, targetRole: Role): boolean {
   return ROLE_RANK[actorRole] > ROLE_RANK[targetRole];
 }
@@ -40,6 +46,16 @@ router.get('/', requireMinRole('manager'), (req, res) => {
   res.json(rows.map(publicUser));
 });
 
+// ── GET /users/invites ────────────────────────────────────────────────────────
+// Must be before GET /:id to prevent 'invites' being treated as an id param
+
+router.get('/invites', requireMinRole('admin'), (req, res) => {
+  const rows = db.prepare(
+    `SELECT * FROM user_invites ORDER BY created_at DESC LIMIT 200`
+  ).all();
+  res.json((rows as any[]).map(publicInvite));
+});
+
 // ── GET /users/:id ────────────────────────────────────────────────────────────
 
 router.get('/:id', requireMinRole('manager'), (req, res) => {
@@ -48,9 +64,9 @@ router.get('/:id', requireMinRole('manager'), (req, res) => {
   res.json(publicUser(row));
 });
 
-// ── POST /users ───────────────────────────────────────────────────────────────
+// ── POST /users (super_admin emergency direct-create) ─────────────────────────
 
-router.post('/', requireMinRole('admin'), (req, res) => {
+router.post('/', requireMinRole('super_admin'), (req, res) => {
   const actor = (req as AuthenticatedRequest).user;
   const { email, name, role = 'user', password } = req.body;
 
@@ -71,12 +87,107 @@ router.post('/', requireMinRole('admin'), (req, res) => {
     ).run(normalizedEmail, name || null, passwordHash, role);
 
     const newUser = db.prepare('SELECT * FROM users WHERE rowid = ?').get(result.lastInsertRowid) as any;
-    logAudit({ actorId: actor.sub, targetId: newUser?.id, action: 'user_created', metadata: { email, role }, req });
+    logAudit({ actorId: actor.sub, targetId: newUser?.id, action: 'user_created', metadata: { email: normalizedEmail, role }, req });
     res.status(201).json(publicUser(newUser));
   } catch (err: any) {
     if (err.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Email already in use' });
     throw err;
   }
+});
+
+// ── POST /users/invite ────────────────────────────────────────────────────────
+
+router.post('/invite', requireMinRole('admin'), (req, res) => {
+  const actor = (req as AuthenticatedRequest).user;
+  const { email, name, role = 'user' } = req.body;
+
+  if (!email) return res.status(400).json({ error: 'email is required' });
+  const normalizedEmail = normalizeEmail(String(email));
+  if (!isAllowedEmail(normalizedEmail)) {
+    return res.status(403).json({ error: 'Only @unilog.company emails are permitted' });
+  }
+  if (!ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  if (!canManage(actor.role as Role, role as Role)) {
+    return res.status(403).json({ error: 'You cannot invite a user with a role equal to or above your own' });
+  }
+
+  // Reject if active/invited user already exists
+  const existingUser = db.prepare(
+    "SELECT id FROM users WHERE LOWER(email) = ? AND status != 'disabled'"
+  ).get(normalizedEmail);
+  if (existingUser) {
+    return res.status(409).json({ error: 'A user with this email already exists' });
+  }
+
+  // Reject if a valid pending invite already exists
+  const existingPending = db.prepare(
+    "SELECT id FROM user_invites WHERE email = ? AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP"
+  ).get(normalizedEmail);
+  if (existingPending) {
+    return res.status(409).json({ error: 'A pending invite already exists for this email. Use resend to reissue it.' });
+  }
+
+  const token = randomBytes(32).toString('hex');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+  db.prepare(
+    `INSERT INTO user_invites (email, role, name, token_hash, invited_by_user_id, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(normalizedEmail, role, name || null, tokenHash, actor.sub, expiresAt);
+
+  const invite = db.prepare('SELECT * FROM user_invites WHERE token_hash = ?').get(tokenHash) as any;
+  logAudit({ actorId: actor.sub, action: 'user_invited', metadata: { email: normalizedEmail, role }, req });
+
+  const appUrl = process.env.APP_URL || 'http://localhost:5173';
+  res.status(201).json({ invite: publicInvite(invite), inviteLink: `${appUrl}/register/accept?token=${token}` });
+});
+
+// ── POST /users/invites/:id/revoke ────────────────────────────────────────────
+
+router.post('/invites/:id/revoke', requireMinRole('admin'), (req, res) => {
+  const actor = (req as AuthenticatedRequest).user;
+  const invite = db.prepare('SELECT * FROM user_invites WHERE id = ?').get(req.params.id) as any;
+  if (!invite) return res.status(404).json({ error: 'Invite not found' });
+  if (invite.status !== 'pending') {
+    return res.status(400).json({ error: 'Only pending invites can be revoked' });
+  }
+
+  db.prepare(
+    "UPDATE user_invites SET status = 'revoked', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(invite.id);
+  logAudit({ actorId: actor.sub, action: 'user_invite_revoked', metadata: { email: invite.email }, req });
+
+  const updated = db.prepare('SELECT * FROM user_invites WHERE id = ?').get(invite.id) as any;
+  res.json(publicInvite(updated));
+});
+
+// ── POST /users/invites/:id/resend ────────────────────────────────────────────
+
+router.post('/invites/:id/resend', requireMinRole('admin'), (req, res) => {
+  const actor = (req as AuthenticatedRequest).user;
+  const invite = db.prepare('SELECT * FROM user_invites WHERE id = ?').get(req.params.id) as any;
+  if (!invite) return res.status(404).json({ error: 'Invite not found' });
+  if (invite.status === 'accepted') {
+    return res.status(400).json({ error: 'This invite has already been accepted' });
+  }
+  if (!canManage(actor.role as Role, invite.role as Role)) {
+    return res.status(403).json({ error: 'Insufficient permissions to resend this invite' });
+  }
+
+  const token = randomBytes(32).toString('hex');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+  db.prepare(
+    "UPDATE user_invites SET token_hash = ?, status = 'pending', expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(tokenHash, expiresAt, invite.id);
+
+  logAudit({ actorId: actor.sub, action: 'user_invite_resent', metadata: { email: invite.email, role: invite.role }, req });
+
+  const updated = db.prepare('SELECT * FROM user_invites WHERE id = ?').get(invite.id) as any;
+  const appUrl = process.env.APP_URL || 'http://localhost:5173';
+  res.json({ invite: publicInvite(updated), inviteLink: `${appUrl}/register/accept?token=${token}` });
 });
 
 // ── PATCH /users/:id ─────────────────────────────────────────────────────────
