@@ -19,6 +19,8 @@ export function UserDashboard() {
   const [resolvedItems, setResolvedItems] = useState<Record<string, number>>({});
   const [duplicateWarning, setDuplicateWarning] = useState<{ generatedAt: string; existingAuditLogId: number } | null>(null);
   const [reviewWarning, setReviewWarning] = useState<{ count: number } | null>(null);
+  const [confirmedDuplicate, setConfirmedDuplicate] = useState(false);
+  const [confirmedReviewSkip, setConfirmedReviewSkip] = useState(false);
 
   const loadPricelists = async () => {
     setLoadingPricelists(true);
@@ -150,7 +152,9 @@ export function UserDashboard() {
     setResolvedItems({});
     setDuplicateWarning(null);
     setReviewWarning(null);
-  }, [selectedCustomer, selectedWarehouse, selectedPricelist, billingCycle]);
+    setConfirmedDuplicate(false);
+    setConfirmedReviewSkip(false);
+  }, [selectedCustomer, selectedWarehouse, selectedPricelist, startDate, endDate, billingCycle]);
 
   const handlePreview = async () => {
     if (!selectedPricelist || !startDate || !endDate) {
@@ -182,10 +186,10 @@ export function UserDashboard() {
       return;
     }
 
-    await executeGenerate();
+    await executeGenerate(confirmedDuplicate, confirmedReviewSkip);
   };
 
-  const executeGenerate = async (force = false, forceReview = false) => {
+  const executeGenerate = async (force: boolean, forceReview: boolean) => {
     try {
       setLoading(true);
       setError(null);
@@ -194,6 +198,8 @@ export function UserDashboard() {
       const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, 1, resolvedItems, force, forceReview);
       setResult(data);
       setStep('result');
+      setConfirmedDuplicate(false);
+      setConfirmedReviewSkip(false);
     } catch (err) {
       if ((err as any).isDuplicate) {
         setDuplicateWarning({ generatedAt: (err as any).generatedAt, existingAuditLogId: (err as any).existingAuditLogId });
@@ -279,6 +285,8 @@ export function UserDashboard() {
     setResolvedItems({});
     setDuplicateWarning(null);
     setReviewWarning(null);
+    setConfirmedDuplicate(false);
+    setConfirmedReviewSkip(false);
   };
 
   const handleBackToPreview = () => {
@@ -719,7 +727,7 @@ export function UserDashboard() {
               <div className="mt-3 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => executeGenerate(false, true)}
+                  onClick={() => { setConfirmedReviewSkip(true); executeGenerate(confirmedDuplicate, true); }}
                   disabled={loading}
                   className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                 >
@@ -727,7 +735,7 @@ export function UserDashboard() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setReviewWarning(null)}
+                  onClick={() => { setReviewWarning(null); setConfirmedReviewSkip(false); }}
                   className="rounded border border-red-300 px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-100"
                 >
                   Go back and resolve
@@ -747,7 +755,7 @@ export function UserDashboard() {
               <div className="mt-3 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => executeGenerate(true)}
+                  onClick={() => { setConfirmedDuplicate(true); executeGenerate(true, confirmedReviewSkip); }}
                   disabled={loading}
                   className="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
                 >
@@ -755,7 +763,7 @@ export function UserDashboard() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDuplicateWarning(null)}
+                  onClick={() => { setDuplicateWarning(null); setConfirmedDuplicate(false); }}
                   className="rounded border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
                 >
                   Cancel

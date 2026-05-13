@@ -3,8 +3,10 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import db from '../../db';
+import { requireAuth } from '../../middleware/auth';
 
 const router = express.Router();
+router.use(requireAuth);
 
 const MAX_SCREENSHOT_BYTES   = 5 * 1024 * 1024;
 const MAX_TITLE_LENGTH       = 200;

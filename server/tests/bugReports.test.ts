@@ -5,6 +5,7 @@ import path from 'path';
 import express from 'express';
 import request from 'supertest';
 import bugReportsRouter from '../routes/api/bugReports';
+import { signAccessToken } from '../services/tokenService';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,14 @@ function buildApp() {
   app.use(express.json());
   app.use('/api/bug-reports', bugReportsRouter);
   return app;
+}
+
+function testToken() {
+  return signAccessToken({ sub: 'test-user-id', email: 'test@unilog.company', role: 'user', twoFactorVerified: true });
+}
+
+function authHeader() {
+  return `Bearer ${testToken()}`;
 }
 
 // ── schema ────────────────────────────────────────────────────────────────────
@@ -163,9 +172,17 @@ describe('screenshot filename safety', () => {
 // route-level behavior
 
 describe('bug report API route', () => {
+  it('returns 401 without auth token', async () => {
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .send({ title: 'unauth', description: 'no token' });
+    expect(res.status).toBe(401);
+  });
+
   it('creates JSON report without exposing screenshot_path', async () => {
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .send({
         title: 'Route bug',
         description: 'Created through HTTP route',
@@ -188,6 +205,7 @@ describe('bug report API route', () => {
 
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .field('title', 'Screenshot bug')
       .field('description', 'Includes screenshot')
       .field('severity', 'medium')
@@ -208,6 +226,7 @@ describe('bug report API route', () => {
   it('rejects invalid severity before insert', async () => {
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .send({ title: 'Bad severity', description: 'Nope', severity: 'extreme' });
 
     expect(res.status).toBe(400);
@@ -218,7 +237,9 @@ describe('bug report API route', () => {
     const id = insertBugReport({ screenshot_path: '/secret/internal/path.png' });
     createdIds.push(id);
 
-    const res = await request(buildApp()).get('/api/bug-reports');
+    const res = await request(buildApp())
+      .get('/api/bug-reports')
+      .set('Authorization', authHeader());
 
     expect(res.status).toBe(200);
     const row = res.body.find((report: any) => report.id === id);
@@ -229,6 +250,7 @@ describe('bug report API route', () => {
   it('rejects missing title/description with 400', async () => {
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .send({ description: 'No title here' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/title/i);
@@ -237,6 +259,7 @@ describe('bug report API route', () => {
   it('rejects title exceeding 200 chars with 400', async () => {
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .send({ title: 'x'.repeat(201), description: 'ok' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/title/i);
@@ -245,6 +268,7 @@ describe('bug report API route', () => {
   it('rejects description exceeding 10000 chars with 400', async () => {
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .send({ title: 'ok', description: 'd'.repeat(10_001) });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/description/i);
@@ -253,6 +277,7 @@ describe('bug report API route', () => {
   it('rejects context exceeding 12000 chars with 400', async () => {
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .send({ title: 'ok', description: 'ok', context: 'c'.repeat(12_001) });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/context/i);
@@ -262,6 +287,7 @@ describe('bug report API route', () => {
     const pdfBytes = Buffer.from('%PDF-1.4');
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .field('title', 'MIME test')
       .field('description', 'Should reject')
       .attach('screenshot', pdfBytes, { filename: 'evil.pdf', contentType: 'application/pdf' });
@@ -273,6 +299,7 @@ describe('bug report API route', () => {
     const sixMB = Buffer.alloc(6 * 1024 * 1024, 0x00);
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .field('title', 'Big file')
       .field('description', 'Too large')
       .attach('screenshot', sixMB, { filename: 'big.png', contentType: 'image/png' });
@@ -286,6 +313,7 @@ describe('bug report API route', () => {
 
     const res = await request(buildApp())
       .patch(`/api/bug-reports/${id}/status`)
+      .set('Authorization', authHeader())
       .send({ status: 'resolved' });
 
     expect(res.status).toBe(200);
@@ -295,7 +323,9 @@ describe('bug report API route', () => {
   });
 
   it('rejects invalid status filter on GET with 400', async () => {
-    const res = await request(buildApp()).get('/api/bug-reports?status=hacked');
+    const res = await request(buildApp())
+      .get('/api/bug-reports?status=hacked')
+      .set('Authorization', authHeader());
     expect(res.status).toBe(400);
   });
 
@@ -305,6 +335,7 @@ describe('bug report API route', () => {
     const before = (db.prepare('SELECT COUNT(*) as n FROM bug_reports').get() as any).n;
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .send({ title: '   ', description: 'valid description' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/title/i);
@@ -316,6 +347,7 @@ describe('bug report API route', () => {
     const before = (db.prepare('SELECT COUNT(*) as n FROM bug_reports').get() as any).n;
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .send({ title: 'valid title', description: '\t\n  ' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/description|title/i);
@@ -331,6 +363,7 @@ describe('bug report API route', () => {
 
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .field('title', 'Spoofed MIME')
       .field('description', 'PNG header claimed but PDF bytes')
       .attach('screenshot', pdfBytes, { filename: 'shot.png', contentType: 'image/png' });
@@ -348,6 +381,7 @@ describe('bug report API route', () => {
     ]);
     const res = await request(buildApp())
       .post('/api/bug-reports')
+      .set('Authorization', authHeader())
       .field('title', 'Valid PNG')
       .field('description', 'Magic bytes are correct')
       .attach('screenshot', pngMagic, { filename: 'shot.png', contentType: 'image/png' });

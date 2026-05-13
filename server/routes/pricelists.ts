@@ -3,11 +3,13 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import db from '../db';
+import { requireAuth } from '../middleware/auth';
 import { PricelistModel } from '../models/Pricelist';
 import { TemplateAnalyzer } from '../services/templateAnalyzer';
 import { pricelistStorage } from '../services/pricelistStorage';
 
 const router = express.Router();
+router.use(requireAuth);
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({

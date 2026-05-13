@@ -5,8 +5,10 @@ import { TableauAPIClient } from '../../services/tableauAPI';
 import { parseTableauViewUrl } from '../../rules/_base';
 import { validateAssistantSteps } from '../../services/stepValidator';
 import db from '../../db';
+import { requireAuth } from '../../middleware/auth';
 
 const router = express.Router();
+router.use(requireAuth);
 
 // Get all rules (with filtering)
 router.get('/', (req, res) => {

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import path from 'path';
 import { execSync } from 'child_process';
 import pricelistsRouter from './routes/pricelists';
@@ -9,6 +10,9 @@ import tableauRouter from './routes/tableau';
 import deployRouter from './routes/deploy';
 import rulesRouter from './routes/api/rules';
 import bugReportsRouter from './routes/api/bugReports';
+import authRouter from './routes/api/auth';
+import usersRouter from './routes/api/users';
+import securityRouter from './routes/api/security';
 
 const getCommitHash = (): string => {
   if (process.env.RAILWAY_GIT_COMMIT_SHA) {
@@ -28,6 +32,7 @@ const PORT = process.env.PORT || 3001;
 app.set('etag', false);
 
 // Middleware
+app.use(helmet({ contentSecurityPolicy: false })); // CSP handled by Vite in dev
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -51,7 +56,23 @@ app.get('/', (req, res) => {
   });
 });
 
+// Production security checks — fail fast before accepting traffic
+if (process.env.NODE_ENV === 'production') {
+  const missingEnvVars: string[] = [];
+  if (!process.env.SUPER_ADMIN_PASSWORD) missingEnvVars.push('SUPER_ADMIN_PASSWORD');
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-in-production') {
+    missingEnvVars.push('JWT_SECRET');
+  }
+  if (missingEnvVars.length > 0) {
+    console.error(`[STARTUP] Missing required env vars in production: ${missingEnvVars.join(', ')}`);
+    process.exit(1);
+  }
+}
+
 // Routes
+app.use('/api/auth', authRouter);
+app.use('/api/users', usersRouter);
+app.use('/api/security', securityRouter);
 app.use('/api/pricelists', pricelistsRouter);
 app.use('/api/rules', rulesRouter);
 app.use('/api/generate', generateRouter);

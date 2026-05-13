@@ -1,8 +1,10 @@
 import express from 'express';
 import db from '../db';
+import { requireAuth } from '../middleware/auth';
 import { TableauAPIClient } from '../services/tableauAPI';
 
 const router = express.Router();
+router.use(requireAuth);
 
 router.get('/options', async (req, res) => {
   try {

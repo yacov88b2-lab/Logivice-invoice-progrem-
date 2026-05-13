@@ -12,8 +12,10 @@ import { pricelistStorage } from '../../services/pricelistStorage';
 import { applyTableauCopyRules } from '../../services/tableauCopyService';
 import { CustomerRuleModel } from '../../models/CustomerRule';
 import { RuleEngine } from '../../services/RuleEngine';
+import { requireAuth } from '../../middleware/auth';
 
 const router = express.Router();
+router.use(requireAuth);
 
 
 function getInvoiceLineItems(templateStructure: any) {

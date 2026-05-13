@@ -57,6 +57,7 @@ import { RuleEngine } from '../services/RuleEngine';
 import { PricelistModel } from '../models/Pricelist';
 import { ExcelDataExtractor } from '../services/excelDataExtractor';
 import generateRouter from '../routes/api/generate';
+import { signAccessToken } from '../services/tokenService';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,11 @@ function buildApp() {
   return app;
 }
 
+function authHeader() {
+  const token = signAccessToken({ sub: 'test-user', email: 'test@unilog.company', role: 'user', twoFactorVerified: true });
+  return `Bearer ${token}`;
+}
+
 const BASE = { pricelist_id: 1, start_date: '2025-01-01', end_date: '2025-01-31' };
 
 // ── No active rule → DataMapper PRIMARY ──────────────────────────────────────
@@ -111,7 +117,7 @@ describe('No active rule — DataMapper PRIMARY path', () => {
       unmatched: [],
     } as any);
 
-    const res = await request(buildApp()).post('/api/generate/preview').send(BASE);
+    const res = await request(buildApp()).post('/api/generate/preview').set('Authorization', authHeader()).send(BASE);
 
     expect(res.status).toBe(200);
     expect(res.body.summary.matched).toBe(1);
@@ -127,7 +133,7 @@ describe('No active rule — DataMapper PRIMARY path', () => {
       unmatched: [],
     } as any);
 
-    const res = await request(buildApp()).post('/api/generate/invoice').send({ ...BASE, user_id: 1 });
+    const res = await request(buildApp()).post('/api/generate/invoice').set('Authorization', authHeader()).send({ ...BASE, user_id: 1 });
 
     expect(res.status).toBe(200);
     expect(res.body.summary.matched).toBe(1);
@@ -160,7 +166,7 @@ describe('Active rule — Rule ENGINE PRIMARY path', () => {
       unmatched: [],
     } as any);
 
-    const res = await request(buildApp()).post('/api/generate/preview').send(BASE);
+    const res = await request(buildApp()).post('/api/generate/preview').set('Authorization', authHeader()).send(BASE);
 
     expect(res.status).toBe(200);
     expect(res.body.summary.matched).toBe(2);
@@ -184,7 +190,7 @@ describe('Active rule — Rule ENGINE PRIMARY path', () => {
     vi.mocked(RuleEngine.evaluateRule).mockResolvedValue(makeRuleResult(true) as any);
     vi.mocked(DataMapper.mapTransactions).mockReturnValue({ matches: [], unmatched: [] } as any);
 
-    const res = await request(buildApp()).post('/api/generate/invoice').send({ ...BASE, user_id: 1 });
+    const res = await request(buildApp()).post('/api/generate/invoice').set('Authorization', authHeader()).send({ ...BASE, user_id: 1 });
 
     expect(res.status).toBe(200);
     expect(res.body.summary.matched).toBe(1);
@@ -206,6 +212,7 @@ describe('Active rule — Rule ENGINE PRIMARY path', () => {
 
     const res = await request(buildApp())
       .post('/api/generate/invoice')
+      .set('Authorization', authHeader())
       .send({ ...BASE, user_id: 1, force_review: true });
 
     expect(res.status).toBe(200);
@@ -219,7 +226,7 @@ describe('Active rule — Rule ENGINE PRIMARY path', () => {
     vi.mocked(RuleEngine.evaluateRule).mockResolvedValue(makeRuleResult(true) as any);
     vi.mocked(DataMapper.mapTransactions).mockReturnValue({ matches: [], unmatched: [] } as any);
 
-    const res = await request(buildApp()).post('/api/generate/preview').send(BASE);
+    const res = await request(buildApp()).post('/api/generate/preview').set('Authorization', authHeader()).send(BASE);
 
     expect(res.status).toBe(200);
     expect(res.body.summary.matched).toBe(3);
@@ -260,6 +267,7 @@ describe('Manual resolutions applied to DataMapper fallback unmatched', () => {
 
     const res = await request(buildApp())
       .post('/api/generate/preview')
+      .set('Authorization', authHeader())
       .send({ ...BASE, resolvedItems: { tx1: 0 } });
 
     expect(res.status).toBe(200);
@@ -287,6 +295,7 @@ describe('Manual resolutions applied to DataMapper fallback unmatched', () => {
 
     const res = await request(buildApp())
       .post('/api/generate/export-total')
+      .set('Authorization', authHeader())
       .send({ ...BASE, resolvedItems: { tx1: 0 } });
 
     expect(res.status).toBe(200);
@@ -312,6 +321,7 @@ describe('Manual resolutions applied to DataMapper fallback unmatched', () => {
 
     const res = await request(buildApp())
       .post('/api/generate/invoice')
+      .set('Authorization', authHeader())
       .send({ ...BASE, user_id: 1 }); // no force_review
 
     expect(res.status).toBe(422);

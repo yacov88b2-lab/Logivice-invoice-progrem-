@@ -1,5 +1,22 @@
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
+// ── Token storage ─────────────────────────────────────────────────────────────
+
+const TOKEN_KEY = 'logivice_token';
+
+export const tokenStore = {
+  get: (): string | null => localStorage.getItem(TOKEN_KEY),
+  set: (token: string): void => localStorage.setItem(TOKEN_KEY, token),
+  clear: (): void => localStorage.removeItem(TOKEN_KEY),
+};
+
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = tokenStore.get();
+  return token ? { Authorization: `Bearer ${token}`, ...extra } : { ...extra };
+}
+
+// ── Error helpers ─────────────────────────────────────────────────────────────
+
 const getErrorMessage = async (res: Response, fallback: string) => {
   try {
     const data = await res.json();
@@ -10,10 +27,182 @@ const getErrorMessage = async (res: Response, fallback: string) => {
   return fallback;
 };
 
+function handle401(res: Response): boolean {
+  if (res.status === 401) {
+    tokenStore.clear();
+    window.dispatchEvent(new Event('logivice:logout'));
+    return true;
+  }
+  return false;
+}
+
 export const api = {
+  // Auth
+  login: async (email: string, password: string) => {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Login failed'));
+    const data = await res.json();
+    if (data.token) tokenStore.set(data.token);
+    return data as { token?: string; requiresTwoFactor?: boolean; preToken?: string; user?: Record<string, unknown> };
+  },
+
+  verify2FA: async (preToken: string, code: string) => {
+    const res = await fetch(`${API_BASE}/auth/2fa-verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preToken, code }),
+    });
+    if (!res.ok) throw new Error(await getErrorMessage(res, '2FA verification failed'));
+    const data = await res.json();
+    if (data.token) tokenStore.set(data.token);
+    return data as { token: string; user: Record<string, unknown> };
+  },
+
+  getMe: async () => {
+    const res = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to fetch profile'));
+    return res.json();
+  },
+
+  logout: async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: authHeaders() });
+    } finally {
+      tokenStore.clear();
+    }
+  },
+
+  // User management
+  getUsers: async () => {
+    const res = await fetch(`${API_BASE}/users`, { headers: authHeaders() });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to fetch users'));
+    return res.json();
+  },
+
+  createUser: async (data: { email: string; name?: string; role: string; password: string }) => {
+    const res = await fetch(`${API_BASE}/users`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(data),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to create user'));
+    return res.json();
+  },
+
+  updateUser: async (id: string, data: { name?: string; role?: string }) => {
+    const res = await fetch(`${API_BASE}/users/${id}`, {
+      method: 'PATCH',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(data),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to update user'));
+    return res.json();
+  },
+
+  disableUser: async (id: string) => {
+    const res = await fetch(`${API_BASE}/users/${id}/disable`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to disable user'));
+    return res.json();
+  },
+
+  enableUser: async (id: string) => {
+    const res = await fetch(`${API_BASE}/users/${id}/enable`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to enable user'));
+    return res.json();
+  },
+
+  resetUserPassword: async (id: string, newPassword: string) => {
+    const res = await fetch(`${API_BASE}/users/${id}/reset-password`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ newPassword }),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to reset password'));
+    return res.json();
+  },
+
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const res = await fetch(`${API_BASE}/users/change-password`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to change password'));
+    return res.json();
+  },
+
+  // Security / 2FA
+  get2FAStatus: async () => {
+    const res = await fetch(`${API_BASE}/security/2fa/status`, { headers: authHeaders() });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to fetch 2FA status'));
+    return res.json() as Promise<{ enabled: boolean; backupCodesRemaining: number }>;
+  },
+
+  setup2FA: async () => {
+    const res = await fetch(`${API_BASE}/security/2fa/setup`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to start 2FA setup'));
+    return res.json() as Promise<{ secret: string; qrCodeDataUrl: string }>;
+  },
+
+  confirm2FA: async (code: string) => {
+    const res = await fetch(`${API_BASE}/security/2fa/confirm`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ code }),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to confirm 2FA'));
+    return res.json() as Promise<{ backupCodes: string[] }>;
+  },
+
+  disable2FA: async (password: string) => {
+    const res = await fetch(`${API_BASE}/security/2fa/disable`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ password }),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to disable 2FA'));
+    return res.json();
+  },
+
+  regenerateBackupCodes: async (password: string) => {
+    const res = await fetch(`${API_BASE}/security/2fa/backup-codes/regenerate`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ password }),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to regenerate backup codes'));
+    return res.json() as Promise<{ backupCodes: string[] }>;
+  },
+
   // Pricelists
   getPricelists: async () => {
-    const res = await fetch(`${API_BASE}/pricelists`);
+    const res = await fetch(`${API_BASE}/pricelists`, { headers: authHeaders() });
     if (!res.ok) throw new Error('Failed to fetch pricelists');
     return res.json();
   },

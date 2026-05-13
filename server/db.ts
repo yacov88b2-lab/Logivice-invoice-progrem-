@@ -1,6 +1,7 @@
 import Database, { type Database as DatabaseType } from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import bcrypt from 'bcryptjs';
 
 const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'database.sqlite');
@@ -180,6 +181,46 @@ function migrateRuleChildTables(): void {
   ensureRuleForeignKeysCurrent();
 }
 
+function migrateUsersTable(): void {
+  if (!tableExists('users')) return;
+
+  const columns = (db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map(c => c.name);
+  // Old schema has 'password' (plaintext); new schema has 'password_hash'
+  if (columns.includes('password_hash')) return; // already migrated
+
+  // Rebuild with new schema — old plaintext passwords cannot be preserved.
+  // FK enforcement must be off to drop the referenced users table.
+  const prevFk = db.pragma('foreign_keys', { simple: true }) as number;
+  db.pragma('foreign_keys = OFF');
+  try {
+    const rebuild = db.transaction(() => {
+      db.exec('DROP TABLE IF EXISTS users_rebuilt');
+      db.exec(`
+        CREATE TABLE users_rebuilt (
+          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          email TEXT UNIQUE NOT NULL,
+          name TEXT,
+          password_hash TEXT NOT NULL DEFAULT '',
+          role TEXT CHECK(role IN ('super_admin', 'admin', 'manager', 'user', 'viewer')) DEFAULT 'user',
+          status TEXT CHECK(status IN ('active', 'invited', 'disabled')) DEFAULT 'active',
+          two_factor_enabled INTEGER DEFAULT 0,
+          two_factor_secret TEXT,
+          backup_codes_hash TEXT,
+          last_login_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      db.exec('DROP TABLE users');
+      db.exec('ALTER TABLE users_rebuilt RENAME TO users');
+    });
+    rebuild();
+  } finally {
+    db.pragma(`foreign_keys = ${prevFk ? 'ON' : 'OFF'}`);
+  }
+  console.log('[DB] Migrated users table to new schema (plaintext passwords cleared)');
+}
+
 // Initialize tables
 export function initDatabase() {
   // Pricelists table
@@ -196,23 +237,31 @@ export function initDatabase() {
     )
   `);
 
-  // Users table
+  // Users table — migrate old schema first, then ensure new schema exists
+  migrateUsersTable();
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      role TEXT CHECK(role IN ('admin', 'user')) DEFAULT 'user',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      name TEXT,
+      password_hash TEXT NOT NULL DEFAULT '',
+      role TEXT CHECK(role IN ('super_admin', 'admin', 'manager', 'user', 'viewer')) DEFAULT 'user',
+      status TEXT CHECK(status IN ('active', 'invited', 'disabled')) DEFAULT 'active',
+      two_factor_enabled INTEGER DEFAULT 0,
+      two_factor_secret TEXT,
+      backup_codes_hash TEXT,
+      last_login_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // Audit logs table
+  // Audit logs table (invoice-level; user_id is TEXT in new schema)
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pricelist_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
       date_range_start TEXT NOT NULL,
       date_range_end TEXT NOT NULL,
       api_data_summary TEXT,
@@ -225,22 +274,35 @@ export function initDatabase() {
     )
   `);
 
-  // Create default admin user if not exists
-  const stmt = db.prepare('SELECT id FROM users WHERE email = ?');
-  const admin = stmt.get('admin@logivice.com');
-  
-  if (!admin) {
-    // Generate secure random password or use env variable
-    const adminPassword = process.env.ADMIN_PASSWORD || 
+  // User action audit log (auth events, user management actions)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_user_id TEXT,
+      target_user_id TEXT,
+      action TEXT NOT NULL,
+      metadata TEXT,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_user_audit_logs_actor ON user_audit_logs(actor_user_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_user_audit_logs_action ON user_audit_logs(action)`);
+
+  // Seed super_admin if none exists
+  const existingSuperAdmin = db.prepare("SELECT id FROM users WHERE role = 'super_admin'").get();
+  if (!existingSuperAdmin) {
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'Jacob.b@unilog.company';
+    const rawPassword = process.env.SUPER_ADMIN_PASSWORD ||
       Array.from(crypto.getRandomValues(new Uint8Array(16)))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
-    
-    const insertAdmin = db.prepare(`
-      INSERT INTO users (email, password, role) VALUES (?, ?, ?)
-    `);
-    insertAdmin.run('admin@logivice.com', adminPassword, 'admin');
-    console.log('Default admin created. Password stored securely.');
+    const passwordHash = bcrypt.hashSync(rawPassword, 12);
+    db.prepare(
+      `INSERT OR IGNORE INTO users (email, name, password_hash, role, status) VALUES (?, 'Super Admin', ?, 'super_admin', 'active')`
+    ).run(superAdminEmail, passwordHash);
+    console.log(`[DB] Super admin created — email: ${superAdminEmail}`);
   }
 
   // Customer Rules table

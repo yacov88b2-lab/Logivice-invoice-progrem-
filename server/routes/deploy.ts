@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { requireAuth, requireMinRole } from '../middleware/auth';
 
 const router = Router();
+router.use(requireAuth);
+router.use(requireMinRole('admin'));
 const execAsync = promisify(exec);
 
 // Check if Test-Main has commits ahead of main
