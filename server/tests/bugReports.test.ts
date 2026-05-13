@@ -298,4 +298,65 @@ describe('bug report API route', () => {
     const res = await request(buildApp()).get('/api/bug-reports?status=hacked');
     expect(res.status).toBe(400);
   });
+
+  // ── whitespace-only title / description ──────────────────────────────────────
+
+  it('rejects whitespace-only title with 400 and no DB insert', async () => {
+    const before = (db.prepare('SELECT COUNT(*) as n FROM bug_reports').get() as any).n;
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .send({ title: '   ', description: 'valid description' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/title/i);
+    const after = (db.prepare('SELECT COUNT(*) as n FROM bug_reports').get() as any).n;
+    expect(after).toBe(before);
+  });
+
+  it('rejects whitespace-only description with 400 and no DB insert', async () => {
+    const before = (db.prepare('SELECT COUNT(*) as n FROM bug_reports').get() as any).n;
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .send({ title: 'valid title', description: '\t\n  ' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/description|title/i);
+    const after = (db.prepare('SELECT COUNT(*) as n FROM bug_reports').get() as any).n;
+    expect(after).toBe(before);
+  });
+
+  // ── magic-byte validation (MIME spoofing) ─────────────────────────────────────
+
+  it('rejects image/png content-type with PDF bytes, returns 400 and no DB insert', async () => {
+    const pdfBytes = Buffer.from('%PDF-1.4 fake pdf content here');
+    const before = (db.prepare('SELECT COUNT(*) as n FROM bug_reports').get() as any).n;
+
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .field('title', 'Spoofed MIME')
+      .field('description', 'PNG header claimed but PDF bytes')
+      .attach('screenshot', pdfBytes, { filename: 'shot.png', contentType: 'image/png' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/PNG|JPEG|WebP|valid/i);
+    const after = (db.prepare('SELECT COUNT(*) as n FROM bug_reports').get() as any).n;
+    expect(after).toBe(before);
+  });
+
+  it('accepts image/png with real PNG magic bytes', async () => {
+    const pngMagic = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    ]);
+    const res = await request(buildApp())
+      .post('/api/bug-reports')
+      .field('title', 'Valid PNG')
+      .field('description', 'Magic bytes are correct')
+      .attach('screenshot', pngMagic, { filename: 'shot.png', contentType: 'image/png' });
+
+    expect(res.status).toBe(201);
+    createdIds.push(res.body.id);
+    expect(res.body.has_screenshot).toBe(true);
+
+    const row = db.prepare('SELECT screenshot_path FROM bug_reports WHERE id = ?').get(res.body.id) as any;
+    if (row?.screenshot_path && fs.existsSync(row.screenshot_path)) fs.unlinkSync(row.screenshot_path);
+  });
 });

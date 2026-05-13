@@ -6,8 +6,7 @@ import db from '../../db';
 
 const router = express.Router();
 
-const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024; // 5 MB
-
+const MAX_SCREENSHOT_BYTES   = 5 * 1024 * 1024;
 const MAX_TITLE_LENGTH       = 200;
 const MAX_DESCRIPTION_LENGTH = 10_000;
 const MAX_REPORTED_BY_LENGTH = 100;
@@ -23,10 +22,8 @@ if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, screenshotDir),
-  filename: (_req, _file, cb) => {
-    const safe = `bug-${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
-    cb(null, safe);
-  },
+  filename: (_req, _file, cb) =>
+    cb(null, `bug-${Date.now()}-${Math.random().toString(36).slice(2)}.png`),
 });
 
 const upload = multer({
@@ -43,25 +40,55 @@ const upload = multer({
 const ALLOWED_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
 const ALLOWED_STATUSES   = ['open', 'in_progress', 'resolved']   as const;
 
+// ── helpers ───────────────────────────────────────────────────────────────────
+
 function publicReport(row: any) {
   if (!row) return row;
   const { screenshot_path: screenshotPath, ...rest } = row;
   return { ...rest, has_screenshot: Boolean(screenshotPath) };
 }
 
-// Runs multer, converts its errors to 400 responses.
+function safeDeleteFile(filePath?: string): void {
+  if (!filePath) return;
+  try { fs.unlinkSync(filePath); } catch { /* already gone or never written */ }
+}
+
+// Validate image magic bytes after multer has written the file to disk.
+// Returns null on success, an error message string on failure.
+function validateImageMagic(filePath: string): string | null {
+  let buf: Buffer;
+  try {
+    buf = Buffer.alloc(12);
+    const fd = fs.openSync(filePath, 'r');
+    try { fs.readSync(fd, buf, 0, 12, 0); } finally { fs.closeSync(fd); }
+  } catch {
+    return 'Could not read uploaded file';
+  }
+
+  const isPng  = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47
+              && buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a;
+  const isJpeg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  const isWebp = buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+              && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
+
+  if (isPng || isJpeg || isWebp) return null;
+  return 'Screenshot must be a valid PNG, JPEG, or WebP image';
+}
+
+// Runs multer, converts its errors to 400.
 function runUpload(req: express.Request, res: express.Response): Promise<void> {
   return new Promise((resolve, reject) => {
     upload.single('screenshot')(req, res, (err: any) => {
       if (!err) return resolve();
-      const isFileTooLarge = err.code === 'LIMIT_FILE_SIZE';
-      const msg = isFileTooLarge
+      const msg = err.code === 'LIMIT_FILE_SIZE'
         ? `Screenshot is too large. Maximum is ${MAX_SCREENSHOT_BYTES / 1024 / 1024} MB.`
         : (err.message || 'Screenshot upload failed');
       reject({ status: 400, message: msg });
     });
   });
 }
+
+// ── routes ────────────────────────────────────────────────────────────────────
 
 router.get('/', (req, res) => {
   try {
@@ -80,40 +107,46 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', async (req, res) => {
+  // 1. Run multer (MIME + size)
   try {
     await runUpload(req, res);
   } catch (uploadErr: any) {
     return res.status(uploadErr.status ?? 400).json({ error: uploadErr.message });
   }
 
+  // 2. Validate magic bytes of the uploaded file (guards against MIME spoofing)
+  if (req.file) {
+    const magicErr = validateImageMagic(req.file.path);
+    if (magicErr) {
+      safeDeleteFile(req.file.path);
+      return res.status(400).json({ error: magicErr });
+    }
+  }
+
+  // Helper: reject with 400, cleaning up any uploaded file
+  const reject400 = (msg: string) => {
+    safeDeleteFile(req.file?.path);
+    return res.status(400).json({ error: msg });
+  };
+
   try {
     const { title, description, page, severity, reported_by, context } = req.body;
 
-    if (!title || !description) {
-      if (req.file) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'title and description are required' });
-    }
+    // Normalize once, then validate
+    const safeTitle       = String(title       ?? '').trim();
+    const safeDescription = String(description ?? '').trim();
 
-    if (String(title).trim().length > MAX_TITLE_LENGTH) {
-      if (req.file) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: `title must be ${MAX_TITLE_LENGTH} characters or fewer` });
-    }
-    if (String(description).trim().length > MAX_DESCRIPTION_LENGTH) {
-      if (req.file) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: `description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer` });
-    }
+    if (!safeTitle)       return reject400('title and description are required');
+    if (!safeDescription) return reject400('title and description are required');
+
+    if (safeTitle.length       > MAX_TITLE_LENGTH)       return reject400(`title must be ${MAX_TITLE_LENGTH} characters or fewer`);
+    if (safeDescription.length > MAX_DESCRIPTION_LENGTH) return reject400(`description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer`);
 
     const safeSeverity = severity || 'medium';
-    if (!ALLOWED_SEVERITIES.includes(safeSeverity as any)) {
-      if (req.file) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'Invalid severity' });
-    }
+    if (!ALLOWED_SEVERITIES.includes(safeSeverity as any)) return reject400('Invalid severity');
 
     const safeContext = context ? String(context) : null;
-    if (safeContext && safeContext.length > MAX_CONTEXT_LENGTH) {
-      if (req.file) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'context is too large' });
-    }
+    if (safeContext && safeContext.length > MAX_CONTEXT_LENGTH) return reject400('context is too large');
 
     const safeReportedBy = reported_by ? String(reported_by).trim().slice(0, MAX_REPORTED_BY_LENGTH) : null;
     const safePage       = page        ? String(page).trim().slice(0, MAX_PAGE_LENGTH)               : null;
@@ -121,22 +154,13 @@ router.post('/', async (req, res) => {
     const result = db.prepare(
       `INSERT INTO bug_reports (title, description, page, severity, reported_by, screenshot_path, context)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      String(title).trim(),
-      String(description).trim(),
-      safePage,
-      safeSeverity,
-      safeReportedBy,
-      req.file ? req.file.path : null,
-      safeContext
-    );
+    ).run(safeTitle, safeDescription, safePage, safeSeverity, safeReportedBy,
+          req.file ? req.file.path : null, safeContext);
 
     const report = db.prepare('SELECT * FROM bug_reports WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(publicReport(report));
   } catch (error) {
-    if (req.file) {
-      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
-    }
+    safeDeleteFile(req.file?.path);
     res.status(500).json({ error: 'Failed to submit bug report', details: (error as Error).message });
   }
 });
