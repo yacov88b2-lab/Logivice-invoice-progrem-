@@ -252,6 +252,9 @@ export function ensureSuperAdmin(emailOverride?: string, rawPassword?: string): 
       db.prepare(
         "UPDATE users SET email = ?, role = 'super_admin', status = 'active', password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?"
       ).run(superAdminEmail, bcrypt.hashSync(effectivePassword, 12), superAdminEmail);
+      if (forcePasswordReset) {
+        console.log(`[DB] Super admin password reset applied — email: ${superAdminEmail}`);
+      }
     } else {
       // User already has a password — promote/activate, leave password alone
       db.prepare(

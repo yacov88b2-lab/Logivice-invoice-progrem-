@@ -19,7 +19,7 @@ const getCommitHash = (): string => {
     return process.env.RAILWAY_GIT_COMMIT_SHA.slice(0, 7);
   }
   try {
-    return execSync('git rev-parse --short HEAD', { stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+    return execSync('git rev-parse --short HEAD', { stdio: ['pipe', 'pipe', 'pipe'], timeout: 1000 }).toString().trim();
   } catch {
     return 'unknown';
   }
@@ -96,6 +96,12 @@ app.get('/api/health', (req, res) => {
     dbPath: path.join(storageRoot, 'database.sqlite'),
     pricelistsPath: path.join(storageRoot, 'uploads', 'pricelists'),
     generatedPath: path.join(storageRoot, 'uploads', 'generated'),
+    authConfig: {
+      superAdminEmail: process.env.SUPER_ADMIN_EMAIL || 'Jacob.b@unilog.company',
+      hasSuperAdminPassword: Boolean(process.env.SUPER_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD),
+      forcePasswordReset: process.env.SUPER_ADMIN_FORCE_PASSWORD_RESET === 'true',
+      hasJwtSecret: Boolean(process.env.JWT_SECRET && process.env.JWT_SECRET !== 'dev-secret-change-in-production'),
+    },
   });
 });
 
