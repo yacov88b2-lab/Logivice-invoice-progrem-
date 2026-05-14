@@ -101,6 +101,7 @@ app.get('/api/health', (req, res) => {
       hasSuperAdminPassword: Boolean(process.env.SUPER_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD),
       forcePasswordReset: process.env.SUPER_ADMIN_FORCE_PASSWORD_RESET === 'true',
       hasJwtSecret: Boolean(process.env.JWT_SECRET && process.env.JWT_SECRET !== 'dev-secret-change-in-production'),
+      appUrl: process.env.APP_URL || null,
     },
   });
 });

@@ -65,7 +65,6 @@ function insertInvite(overrides: Record<string, unknown> = {}): { id: string; to
     email,
     role: 'user',
     name: 'Invited User',
-    token_hash: tokenHash,
     invited_by_user_id: invitorId,
     status: 'pending',
     expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
@@ -84,6 +83,7 @@ function insertInvite(overrides: Record<string, unknown> = {}): { id: string; to
 }
 
 afterEach(() => {
+  delete process.env.APP_URL;
   const items = cleanup.splice(0);
   for (const item of items) {
     if (item.type === 'user_id')    db.prepare('DELETE FROM users WHERE id = ?').run(item.value);
@@ -168,6 +168,22 @@ describe('POST /api/users/invite', () => {
     expect(res.body.invite.name).toBe('John Doe');
     expect(res.body.invite.role).toBe('user');
     expect(res.body.invite.status).toBe('pending');
+    if (res.body.invite.id) cleanup.push({ type: 'invite_id', value: res.body.invite.id });
+  });
+
+  it('uses APP_URL for invite links when configured', async () => {
+    process.env.APP_URL = 'https://logivice-staging.netlify.app';
+    const admin = insertUser({ role: 'admin' });
+    const email = `app-url-inv-${Date.now()}@unilog.company`;
+    cleanup.push({ type: 'user_email', value: email });
+
+    const res = await request(buildApp())
+      .post('/api/users/invite')
+      .set('Authorization', `Bearer ${makeToken(admin, 'admin')}`)
+      .send({ email, role: 'user' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.inviteLink).toMatch(/^https:\/\/logivice-staging\.netlify\.app\/register\/accept\?token=/);
     if (res.body.invite.id) cleanup.push({ type: 'invite_id', value: res.body.invite.id });
   });
 
