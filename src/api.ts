@@ -257,12 +257,14 @@ export const api = {
   // Pricelists
   getPricelists: async () => {
     const res = await fetch(`${API_BASE}/pricelists`, { headers: authHeaders() });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error('Failed to fetch pricelists');
     return res.json();
   },
 
   getPricelist: async (id: number) => {
-    const res = await fetch(`${API_BASE}/pricelists/${id}`);
+    const res = await fetch(`${API_BASE}/pricelists/${id}`, { headers: authHeaders() });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error('Failed to fetch pricelist');
     return res.json();
   },
@@ -270,8 +272,10 @@ export const api = {
   createPricelist: async (formData: FormData) => {
     const res = await fetch(`${API_BASE}/pricelists`, {
       method: 'POST',
+      headers: authHeaders(),
       body: formData,
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error('Failed to create pricelist');
     return res.json();
   },
@@ -279,8 +283,10 @@ export const api = {
   updatePricelist: async (id: number, formData: FormData) => {
     const res = await fetch(`${API_BASE}/pricelists/${id}`, {
       method: 'PUT',
+      headers: authHeaders(),
       body: formData,
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error('Failed to update pricelist');
     return res.json();
   },
@@ -288,17 +294,10 @@ export const api = {
   deletePricelist: async (id: number) => {
     const res = await fetch(`${API_BASE}/pricelists/${id}`, {
       method: 'DELETE',
+      headers: authHeaders(),
     });
-    if (!res.ok) {
-      let msg = 'Failed to delete pricelist';
-      try {
-        const data = await res.json();
-        if (data?.error) msg = String(data.error);
-      } catch {
-        // ignore
-      }
-      throw new Error(msg);
-    }
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to delete pricelist'));
   },
 
   downloadPricelist: (id: number) => {
@@ -326,9 +325,10 @@ export const api = {
     if (resolvedItems && Object.keys(resolvedItems).length > 0) body.resolvedItems = resolvedItems;
     const res = await fetch(`${API_BASE}/generate/preview`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to preview mapping'));
     return res.json();
   },
@@ -338,9 +338,10 @@ export const api = {
     if (resolvedItems && Object.keys(resolvedItems).length > 0) body.resolvedItems = resolvedItems;
     const res = await fetch(`${API_BASE}/generate/invoice`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (res.status === 409) {
       const data = await res.json();
       const err = new Error(data.message || 'Duplicate invoice period') as any;
@@ -372,9 +373,10 @@ export const api = {
     if (resolvedItems && Object.keys(resolvedItems).length > 0) body.resolvedItems = resolvedItems;
     const res = await fetch(`${API_BASE}/generate/export-total`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to export total. Please try again.'));
     return res;
   },
@@ -385,7 +387,8 @@ export const api = {
 
   // Customer rules
   getRules: async () => {
-    const res = await fetch(`${API_BASE}/rules`);
+    const res = await fetch(`${API_BASE}/rules`, { headers: authHeaders() });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to fetch rules'));
     return res.json();
   },
@@ -393,9 +396,10 @@ export const api = {
   createRule: async (rule: unknown) => {
     const res = await fetch(`${API_BASE}/rules`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(rule),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to create rule'));
     return res.json();
   },
@@ -403,9 +407,10 @@ export const api = {
   updateRule: async (id: string, rule: unknown) => {
     const res = await fetch(`${API_BASE}/rules/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(rule),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to update rule'));
     return res.json();
   },
@@ -413,9 +418,10 @@ export const api = {
   toggleRule: async (id: string, enabled: boolean) => {
     const res = await fetch(`${API_BASE}/rules/${id}/toggle`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ enabled, updated_by: 'admin' }),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to toggle rule'));
     return res.json();
   },
@@ -423,9 +429,10 @@ export const api = {
   createRuleVersion: async (id: string) => {
     const res = await fetch(`${API_BASE}/rules/${id}/create-version`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ created_by: 'admin' }),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to create draft copy'));
     return res.json();
   },
@@ -433,18 +440,20 @@ export const api = {
   deleteRule: async (id: string) => {
     const res = await fetch(`${API_BASE}/rules/${id}`, {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ updated_by: 'admin' }),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to delete rule'));
   },
 
   testRule: async (id: string, testData: unknown) => {
     const res = await fetch(`${API_BASE}/rules/${id}/test`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ testData }),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to test rule'));
     return res.json();
   },
@@ -452,9 +461,10 @@ export const api = {
   markRuleTested: async (id: string) => {
     const res = await fetch(`${API_BASE}/rules/${id}/mark-tested`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ tested_by: 'admin' }),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to mark rule as tested'));
     return res.json();
   },
@@ -462,9 +472,10 @@ export const api = {
   approveRule: async (id: string) => {
     const res = await fetch(`${API_BASE}/rules/${id}/approve`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ approved_by: 'admin' }),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to approve rule'));
     return res.json();
   },
@@ -472,9 +483,10 @@ export const api = {
   revertRuleToDraft: async (id: string) => {
     const res = await fetch(`${API_BASE}/rules/${id}/revert-to-draft`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ reverted_by: 'admin' }),
     });
+    if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to revert rule to draft'));
     return res.json();
   },
@@ -497,7 +509,7 @@ export const api = {
     try {
       res = await fetch(`${API_BASE}/rules/validate-tableau-url`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ url }),
       });
     } catch {
@@ -518,7 +530,7 @@ export const api = {
   suggestRuleSteps: async (customerId: string, description: string, sampleTransactions?: unknown[]) => {
     const res = await fetch(`${API_BASE}/rules/assistant/suggest`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ customer_id: customerId, description, sample_transactions: sampleTransactions }),
     });
     if (!res.ok) {
