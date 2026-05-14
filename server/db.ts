@@ -246,7 +246,7 @@ export function ensureSuperAdmin(emailOverride?: string, rawPassword?: string): 
 
   if (existing) {
     const hasPassword = Boolean(existing.password_hash);
-    if (existing.role === 'super_admin' && existing.status === 'active' && hasPassword) return;
+    if (existing.role === 'super_admin' && existing.status === 'active' && hasPassword && !forcePasswordReset) return;
 
     if ((forcePasswordReset || !hasPassword) && effectivePassword) {
       db.prepare(
