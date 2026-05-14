@@ -31,6 +31,10 @@ function insertRaw(email: string, role: string, status: string, passwordHash = '
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('ensureSuperAdmin', () => {
+  afterEach(() => {
+    delete process.env.SUPER_ADMIN_FORCE_PASSWORD_RESET;
+  });
+
   it('creates super_admin with hashed password when email does not exist', () => {
     const email = uniqueEmail();
     cleanup(email);
@@ -90,6 +94,19 @@ describe('ensureSuperAdmin', () => {
     expect(updated.password_hash).toBe(originalHash);
     expect(bcrypt.compareSync('OriginalPass1', updated.password_hash)).toBe(true);
     expect(bcrypt.compareSync('DifferentPass1', updated.password_hash)).toBe(false);
+  });
+
+  it('overwrites existing password_hash when force reset is enabled', () => {
+    const email = uniqueEmail();
+    const originalHash = bcrypt.hashSync('OriginalPass1', 10);
+    insertRaw(email, 'admin', 'active', originalHash);
+
+    process.env.SUPER_ADMIN_FORCE_PASSWORD_RESET = 'true';
+    ensureSuperAdmin(email, 'DifferentPass1');
+
+    const updated = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(email) as any;
+    expect(updated.password_hash).not.toBe(originalHash);
+    expect(bcrypt.compareSync('DifferentPass1', updated.password_hash)).toBe(true);
   });
 
   it('sets password from rawPassword argument when user has empty password_hash', () => {

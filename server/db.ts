@@ -229,6 +229,7 @@ export function ensureSuperAdmin(emailOverride?: string, rawPassword?: string): 
   const superAdminEmail = (
     emailOverride ?? process.env.SUPER_ADMIN_EMAIL ?? 'Jacob.b@unilog.company'
   ).trim().toLowerCase();
+  const forcePasswordReset = process.env.SUPER_ADMIN_FORCE_PASSWORD_RESET === 'true';
 
   const existing = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(superAdminEmail) as any;
 
@@ -247,7 +248,7 @@ export function ensureSuperAdmin(emailOverride?: string, rawPassword?: string): 
     const hasPassword = Boolean(existing.password_hash);
     if (existing.role === 'super_admin' && existing.status === 'active' && hasPassword) return;
 
-    if (!hasPassword && effectivePassword) {
+    if ((forcePasswordReset || !hasPassword) && effectivePassword) {
       db.prepare(
         "UPDATE users SET email = ?, role = 'super_admin', status = 'active', password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?"
       ).run(superAdminEmail, bcrypt.hashSync(effectivePassword, 12), superAdminEmail);
