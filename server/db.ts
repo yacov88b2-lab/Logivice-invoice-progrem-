@@ -234,13 +234,13 @@ export function ensureSuperAdmin(emailOverride?: string, rawPassword?: string): 
   const existing = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(superAdminEmail) as any;
 
   // rawPassword is provided only in tests; production always uses the env var.
-  const effectivePassword = rawPassword ?? process.env.SUPER_ADMIN_PASSWORD;
+  const effectivePassword = rawPassword ?? process.env.SUPER_ADMIN_PASSWORD ?? process.env.ADMIN_PASSWORD;
 
   // A password write is needed when: creating a new user, or the existing user has no password.
   const needsPasswordWrite = !existing || !Boolean(existing.password_hash);
 
   if (isProductionLike && needsPasswordWrite && !effectivePassword) {
-    console.error('[DB] SUPER_ADMIN_PASSWORD is required in production/staging to seed super admin');
+    console.error('[DB] SUPER_ADMIN_PASSWORD or ADMIN_PASSWORD is required in production/staging to seed super admin');
     process.exit(1);
   }
 

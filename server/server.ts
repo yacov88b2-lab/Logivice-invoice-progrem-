@@ -61,7 +61,9 @@ app.get('/', (req, res) => {
 const isProductionLike = !['development', 'test'].includes(process.env.NODE_ENV ?? '');
 if (isProductionLike) {
   const missingEnvVars: string[] = [];
-  if (!process.env.SUPER_ADMIN_PASSWORD) missingEnvVars.push('SUPER_ADMIN_PASSWORD');
+  if (!process.env.SUPER_ADMIN_PASSWORD && !process.env.ADMIN_PASSWORD) {
+    missingEnvVars.push('SUPER_ADMIN_PASSWORD');
+  }
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-in-production') {
     missingEnvVars.push('JWT_SECRET');
   }
