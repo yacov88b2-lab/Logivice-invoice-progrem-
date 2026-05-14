@@ -296,7 +296,7 @@ export function CustomerRules() {
             AI Assistant
           </button>
           <button type="button" onClick={startNewRule}
-            className="rounded bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
+            className="rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
             New Rule
           </button>
         </div>
@@ -323,7 +323,7 @@ export function CustomerRules() {
         <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
       )}
 
-      <section className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl bg-white p-5 shadow-md">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <label className="block w-full sm:max-w-sm">
             <span className="mb-1 block text-sm font-semibold text-slate-700">Customer</span>
@@ -341,7 +341,7 @@ export function CustomerRules() {
         </div>
       </section>
 
-      <section className="rounded border border-slate-200 bg-white shadow-sm">
+      <section className="rounded-2xl bg-white shadow-md">
         <div className="border-b border-slate-200 px-5 py-4">
           <h3 className="text-base font-semibold text-slate-950">Rules</h3>
         </div>
@@ -352,7 +352,7 @@ export function CustomerRules() {
           <div className="p-8 text-center">
             <div className="text-base font-semibold text-slate-800">No rules for this customer yet</div>
             <button type="button" onClick={startNewRule}
-              className="mt-4 rounded bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
+              className="mt-4 rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
               Create First Rule
             </button>
           </div>
@@ -396,20 +396,20 @@ export function CustomerRules() {
                       <button type="button"
                         onClick={() => handleCreateCopy(rule)}
                         title="Active rules cannot be edited in place. Creates a new draft copy you can safely change."
-                        className="rounded bg-[#28258b]/10 px-3 py-1.5 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15">
+                        className="rounded-lg bg-[#28258b]/10 px-3 py-1.5 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15">
                         Create Draft Copy
                       </button>
                     ) : (stage === 'tested' || stage === 'approved') ? (
                       <button type="button"
                         onClick={() => handleEditWithWarning(rule)}
                         title="Changing steps or logic will reset this rule to Draft"
-                        className="rounded bg-[#28258b]/10 px-3 py-1.5 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15">
+                        className="rounded-lg bg-[#28258b]/10 px-3 py-1.5 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15">
                         Edit
                       </button>
                     ) : (
                       <button type="button"
                         onClick={() => { setSelectedRule(rule); setMode('edit'); }}
-                        className="rounded bg-[#28258b]/10 px-3 py-1.5 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15">
+                        className="rounded-lg bg-[#28258b]/10 px-3 py-1.5 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15">
                         Edit
                       </button>
                     )}
@@ -441,7 +441,7 @@ export function CustomerRules() {
                     {stage === 'approved' && (
                       <button type="button"
                         onClick={() => handleToggle(rule)}
-                        className="rounded bg-[#28258b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]">
+                        className="rounded-lg bg-[#28258b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]">
                         Enable
                       </button>
                     )}

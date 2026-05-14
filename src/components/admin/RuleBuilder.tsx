@@ -114,7 +114,7 @@ export function RuleBuilder({ customerId, onSave, existingRule }: RuleBuilderPro
 
   return (
     <div className="space-y-6">
-      <div className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl bg-white p-5 shadow-md">
         <h3 className="text-lg font-semibold">Rule Details</h3>
         <div className="mt-4 space-y-4">
           <div>
@@ -168,7 +168,7 @@ export function RuleBuilder({ customerId, onSave, existingRule }: RuleBuilderPro
         </div>
       </div>
 
-      <div className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl bg-white p-5 shadow-md">
         <h3 className="text-lg font-semibold">Rule Steps</h3>
 
         {/* Step list */}

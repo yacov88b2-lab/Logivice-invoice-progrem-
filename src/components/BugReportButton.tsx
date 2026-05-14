@@ -141,7 +141,7 @@ export function BugReportButton() {
                 <p className="text-sm text-slate-600">Your report has been logged and will be reviewed.</p>
                 <button
                   onClick={handleClose}
-                  className="mt-5 rounded bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
+                  className="mt-5 rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
                 >
                   Close
                 </button>

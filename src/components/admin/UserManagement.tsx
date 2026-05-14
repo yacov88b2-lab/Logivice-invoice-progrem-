@@ -126,7 +126,7 @@ export function UserManagement() {
         {me && ROLE_RANK[me.role as Role] >= ROLE_RANK.admin && (
           <button
             onClick={() => setShowInvite(true)}
-            className="rounded bg-[#28258b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]"
+            className="rounded-lg bg-[#28258b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]"
           >
             + Invite User
           </button>
@@ -396,7 +396,7 @@ function InviteUserModal({
             </button>
             <button
               onClick={onInvited}
-              className="flex-1 rounded bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
+              className="flex-1 rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
             >
               Done
             </button>
@@ -456,7 +456,7 @@ function InviteUserModal({
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 rounded bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
+              className="flex-1 rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
             >
               {loading ? 'Sending…' : 'Send invite'}
             </button>

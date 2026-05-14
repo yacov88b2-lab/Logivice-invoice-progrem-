@@ -189,7 +189,7 @@ export function RuleWizard({ customerId, existingRule, onSave }: RuleWizardProps
       )}
 
       {/* Step panel */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-2xl bg-white p-6 shadow-md">
         {step === 'name'      && <NameStep      state={state} update={update} isListening={isListening} onToggleVoice={toggleVoice} />}
         {step === 'intent'    && <IntentStep    state={state} update={update} />}
         {step === 'configure' && <ConfigureStep state={state} update={update} customerId={customerId} />}
@@ -210,7 +210,7 @@ export function RuleWizard({ customerId, existingRule, onSave }: RuleWizardProps
           type="button"
           disabled={!canProceed() || saving}
           onClick={handleNext}
-          className="rounded bg-[#28258b] px-6 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-40"
+          className="rounded-lg bg-[#28258b] px-6 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-40"
         >
           {saving ? 'Saving…' : step === 'review' ? '✓ Save Rule' : 'Next →'}
         </button>

@@ -80,7 +80,7 @@ export function SecuritySettings() {
           ) : (
             <button
               onClick={() => setPanel('setup')}
-              className="rounded bg-[#28258b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]"
+              className="rounded-lg bg-[#28258b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]"
             >
               Enable 2FA
             </button>
@@ -136,7 +136,7 @@ function Setup2FAPanel({ onClose, onSetupDone }: { onClose: () => void; onSetupD
       <img src={data.qrCodeDataUrl} alt="QR code" className="w-40 h-40 mx-auto rounded border border-slate-200" />
       <p className="text-xs text-slate-500 text-center">Manual entry key: <span className="font-mono bg-slate-100 px-1 rounded">{data.secret}</span></p>
       <div className="flex gap-2">
-        <button onClick={onSetupDone} className="flex-1 rounded bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">Continue</button>
+        <button onClick={onSetupDone} className="flex-1 rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">Continue</button>
         <button onClick={onClose} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Cancel</button>
       </div>
     </Modal>
@@ -172,7 +172,7 @@ function Confirm2FAPanel({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-2 gap-1.5 font-mono text-sm bg-slate-50 rounded p-3 border border-slate-200">
           {backupCodes.map(c => <span key={c} className="text-center">{c}</span>)}
         </div>
-        <button onClick={onClose} className="w-full rounded bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
+        <button onClick={onClose} className="w-full rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
           Done — I've saved my codes
         </button>
       </Modal>
@@ -195,7 +195,7 @@ function Confirm2FAPanel({ onClose }: { onClose: () => void }) {
         />
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
-          <button type="submit" disabled={loading || code.length < 6} className="flex-1 rounded bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50">
+          <button type="submit" disabled={loading || code.length < 6} className="flex-1 rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50">
             {loading ? 'Verifying…' : 'Confirm'}
           </button>
           <button type="button" onClick={onClose} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Cancel</button>
@@ -279,7 +279,7 @@ function BackupCodesPanel({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-2 gap-1.5 font-mono text-sm bg-slate-50 rounded p-3 border border-slate-200">
           {newCodes.map(c => <span key={c} className="text-center">{c}</span>)}
         </div>
-        <button onClick={onClose} className="w-full rounded bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">Done</button>
+        <button onClick={onClose} className="w-full rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">Done</button>
       </Modal>
     );
   }
@@ -298,7 +298,7 @@ function BackupCodesPanel({ onClose }: { onClose: () => void }) {
         />
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
-          <button type="submit" disabled={loading} className="flex-1 rounded bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50">
+          <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50">
             {loading ? 'Generating…' : 'Regenerate'}
           </button>
           <button type="button" onClick={onClose} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Cancel</button>
@@ -350,7 +350,7 @@ function ChangePasswordPanel({ onClose }: { onClose: () => void }) {
         ))}
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
-          <button type="submit" disabled={loading} className="flex-1 rounded bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50">
+          <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50">
             {loading ? 'Saving…' : 'Change password'}
           </button>
           <button type="button" onClick={onClose} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Cancel</button>

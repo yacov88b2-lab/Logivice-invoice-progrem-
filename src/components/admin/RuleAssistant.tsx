@@ -92,7 +92,7 @@ export function RuleAssistant({ customerId, onSaved, onCancel }: Props) {
 
       <button type="button" onClick={handleSuggest}
         disabled={loadingSuggest || description.trim().length < 5}
-        className="rounded bg-[#28258b] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50">
+        className="rounded-lg bg-[#28258b] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50">
         {loadingSuggest ? 'Generating…' : 'Suggest rule steps'}
       </button>
 

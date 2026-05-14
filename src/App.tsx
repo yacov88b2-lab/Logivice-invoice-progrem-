@@ -18,7 +18,7 @@ function AppShell() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-sm text-slate-500">
+      <div className="min-h-screen flex items-center justify-center bg-[#f1f0f9] text-sm text-slate-500">
         Loading…
       </div>
     );
@@ -37,42 +37,48 @@ function AppShell() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <div className="flex items-center gap-4">
-                <img src="/logo.png" alt="Unilog SC" className="h-[46px] w-auto shrink-0" />
-                <div>
-                  <h1 className="text-xl font-semibold tracking-normal text-slate-950">
-                    Monthly Invoice Control
-                  </h1>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Create customer invoices correctly against the active pricelist.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 text-sm">
-                <span className="text-slate-500">{user.name || user.email}</span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{user.role}</span>
-                <button
-                  onClick={() => logout()}
-                  className="rounded border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                >
-                  Sign out
-                </button>
+    <div className="min-h-screen bg-[#f1f0f9] text-slate-900 font-sans">
+      <header
+        className="sticky top-0 z-40 shadow-lg"
+        style={{ background: 'linear-gradient(135deg, #28258b 0%, #5b21b6 60%, #7c3aed 100%)' }}
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="flex items-center justify-between py-3">
+            <div className="flex items-center gap-3">
+              <img src="/logo.png" alt="Unilog SC" className="h-9 w-auto shrink-0 brightness-0 invert" />
+              <div>
+                <h1 className="text-white text-lg font-bold tracking-tight leading-tight">
+                  Monthly Invoice Control
+                </h1>
+                <p className="text-white/60 text-xs leading-tight hidden sm:block">
+                  Unilog SC · Invoice Processor
+                </p>
               </div>
             </div>
-            <nav className="flex w-full flex-wrap gap-2 rounded-md border border-slate-200 bg-slate-50 p-1">
+            <div className="flex items-center gap-2.5">
+              <span className="text-white/75 text-sm hidden sm:block">{user.name || user.email}</span>
+              <span className="bg-white/15 text-white/90 text-xs px-2.5 py-1 rounded-full font-medium">
+                {user.role.replace('_', ' ')}
+              </span>
+              <button
+                onClick={() => logout()}
+                className="text-white/75 hover:text-white text-xs border border-white/25 hover:border-white/50 px-3 py-1.5 rounded-lg hover:bg-white/10 transition-all"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+
+          <div className="pb-2">
+            <nav className="flex gap-0.5 bg-black/20 backdrop-blur-sm rounded-xl p-1 w-fit">
               {tabs.filter(t => t.show).map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`rounded px-4 py-2 text-sm font-semibold transition-colors ${
+                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
                     activeTab === tab.id
-                      ? 'bg-[#28258b] text-white shadow-sm'
-                      : 'text-slate-700 hover:bg-white hover:text-slate-950'
+                      ? 'bg-white text-[#28258b] shadow-sm font-semibold'
+                      : 'text-white/70 hover:text-white hover:bg-white/10'
                   }`}
                 >
                   {tab.label}
@@ -94,9 +100,9 @@ function AppShell() {
       <ToastContainer />
       <BugReportButton />
 
-      <footer className="mt-10 border-t border-slate-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-4 text-center text-sm text-slate-500 sm:px-6">
-          Unilog SC Invoice Control (c) 2026
+      <footer className="mt-10 border-t border-slate-200/50">
+        <div className="mx-auto max-w-7xl px-4 py-3 text-center text-xs text-slate-400 sm:px-6">
+          Unilog SC Invoice Control · 2026
         </div>
       </footer>
     </div>

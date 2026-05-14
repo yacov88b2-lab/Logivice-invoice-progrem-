@@ -166,7 +166,7 @@ export function PricelistManager() {
           )}
           <button
             onClick={() => setShowUpload(true)}
-            className="rounded bg-[#28258b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#1f1d70]"
+            className="rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#1f1d70]"
           >
             Upload Pricelist
           </button>
@@ -190,7 +190,7 @@ export function PricelistManager() {
           onClose={handleCloseUpload}
         />
       ) : (
-        <div className="rounded border border-slate-200 bg-white shadow-sm">
+        <div className="rounded-2xl bg-white shadow-md">
           <PricelistList
             onEdit={handleEdit}
             onRefresh={handleRefresh}

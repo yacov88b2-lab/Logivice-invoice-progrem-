@@ -156,7 +156,7 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDownload(p.id)}
-                    className="rounded bg-[#28258b]/10 px-3 py-1 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15"
+                    className="rounded-lg bg-[#28258b]/10 px-3 py-1 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15"
                   >
                     Download
                   </button>

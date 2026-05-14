@@ -16,11 +16,8 @@ export function UserDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<'select' | 'preview' | 'result'>('select');
   const [billingCycle, setBillingCycle] = useState<'custom' | 'full_month'>('full_month');
-  const [resolvedItems, setResolvedItems] = useState<Record<string, number>>({});
   const [duplicateWarning, setDuplicateWarning] = useState<{ generatedAt: string; existingAuditLogId: number } | null>(null);
-  const [reviewWarning, setReviewWarning] = useState<{ count: number } | null>(null);
   const [confirmedDuplicate, setConfirmedDuplicate] = useState(false);
-  const [confirmedReviewSkip, setConfirmedReviewSkip] = useState(false);
 
   const loadPricelists = async () => {
     setLoadingPricelists(true);
@@ -149,11 +146,8 @@ export function UserDashboard() {
     setResult(null);
     setStep('select');
     setError(null);
-    setResolvedItems({});
     setDuplicateWarning(null);
-    setReviewWarning(null);
     setConfirmedDuplicate(false);
-    setConfirmedReviewSkip(false);
   }, [selectedCustomer, selectedWarehouse, selectedPricelist, startDate, endDate, billingCycle]);
 
   const handlePreview = async () => {
@@ -186,25 +180,21 @@ export function UserDashboard() {
       return;
     }
 
-    await executeGenerate(confirmedDuplicate, confirmedReviewSkip);
+    await executeGenerate(confirmedDuplicate);
   };
 
-  const executeGenerate = async (force: boolean, forceReview: boolean) => {
+  const executeGenerate = async (force: boolean) => {
     try {
       setLoading(true);
       setError(null);
       setDuplicateWarning(null);
-      setReviewWarning(null);
-      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, resolvedItems, force, forceReview);
+      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, {}, force, true);
       setResult(data);
       setStep('result');
       setConfirmedDuplicate(false);
-      setConfirmedReviewSkip(false);
     } catch (err) {
       if ((err as any).isDuplicate) {
         setDuplicateWarning({ generatedAt: (err as any).generatedAt, existingAuditLogId: (err as any).existingAuditLogId });
-      } else if ((err as any).isUnresolvedReview) {
-        setReviewWarning({ count: (err as any).unresolvedCount });
       } else {
         setError(err instanceof Error ? err.message : 'Failed to generate invoice. Please try again.');
       }
@@ -273,20 +263,13 @@ export function UserDashboard() {
     })();
   };
 
-  const handleApplyResolutions = async () => {
-    await executePreview(resolvedItems);
-  };
-
   const handleReset = () => {
     setStep('select');
     setPreview(null);
     setResult(null);
     setError(null);
-    setResolvedItems({});
     setDuplicateWarning(null);
-    setReviewWarning(null);
     setConfirmedDuplicate(false);
-    setConfirmedReviewSkip(false);
   };
 
   const handleBackToPreview = () => {
@@ -309,7 +292,7 @@ export function UserDashboard() {
         const safeCustomer = String(selectedCustomer || preview?.pricelist?.name || 'Customer').trim();
         const downloadName = `${safeCustomer} Total transaction matched and unmatched ${timestamp}.xlsx`;
 
-        const res = await api.exportTotal(Number(selectedPricelist), startDate, endDate, resolvedItems);
+        const res = await api.exportTotal(Number(selectedPricelist), startDate, endDate, {});
         await downloadFromResponse(res, downloadName);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -323,7 +306,7 @@ export function UserDashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl bg-white p-5 shadow-md">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#58a967]">
@@ -336,14 +319,17 @@ export function UserDashboard() {
               Select the customer, confirm the active pricelist, review Tableau matches, and generate the final Excel invoice.
             </p>
           </div>
-          <div className="grid min-w-full grid-cols-3 rounded border border-slate-200 bg-slate-50 p-1 text-center text-xs font-semibold text-slate-600 sm:min-w-[420px]">
-            <div className={`rounded px-3 py-2 ${step === 'select' ? 'bg-[#28258b] text-white' : ''}`}>
+          <div className="flex gap-0.5 bg-black/5 rounded-xl p-1 text-center text-xs font-semibold min-w-[300px] sm:min-w-[360px]">
+            <div className={`flex-1 rounded-lg px-3 py-2 transition-all ${step === 'select' ? 'text-white shadow-sm' : 'text-slate-500'}`}
+              style={step === 'select' ? { background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' } : {}}>
               1. Setup
             </div>
-            <div className={`rounded px-3 py-2 ${step === 'preview' ? 'bg-[#28258b] text-white' : ''}`}>
+            <div className={`flex-1 rounded-lg px-3 py-2 transition-all ${step === 'preview' ? 'text-white shadow-sm' : 'text-slate-500'}`}
+              style={step === 'preview' ? { background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' } : {}}>
               2. Review
             </div>
-            <div className={`rounded px-3 py-2 ${step === 'result' ? 'bg-[#28258b] text-white' : ''}`}>
+            <div className={`flex-1 rounded-lg px-3 py-2 transition-all ${step === 'result' ? 'text-white shadow-sm' : 'text-slate-500'}`}
+              style={step === 'result' ? { background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' } : {}}>
               3. Download
             </div>
           </div>
@@ -352,7 +338,7 @@ export function UserDashboard() {
 
       {step === 'select' && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="rounded-2xl bg-white p-5 shadow-md">
             <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
               <div>
                 <h3 className="text-base font-semibold text-slate-950">Invoice Setup</h3>
@@ -448,14 +434,14 @@ export function UserDashboard() {
               <span className="mb-2 block text-sm font-semibold text-slate-700">
                 Billing Period
               </span>
-              <div className="grid grid-cols-2 gap-2 rounded border border-slate-200 bg-slate-50 p-1">
+              <div className="grid grid-cols-2 gap-0.5 rounded-xl bg-black/5 p-1">
                 <button
                   type="button"
                   onClick={() => setBillingCycle('full_month')}
-                  className={`rounded px-4 py-2 text-sm font-semibold transition-colors ${
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
                     billingCycle === 'full_month'
                       ? 'bg-white text-[#28258b] shadow-sm'
-                      : 'text-slate-600 hover:text-slate-950'
+                      : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   Full Month
@@ -463,10 +449,10 @@ export function UserDashboard() {
                 <button
                   type="button"
                   onClick={() => setBillingCycle('custom')}
-                  className={`rounded px-4 py-2 text-sm font-semibold transition-colors ${
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
                     billingCycle === 'custom'
                       ? 'bg-white text-[#28258b] shadow-sm'
-                      : 'text-slate-600 hover:text-slate-950'
+                      : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   Custom Range
@@ -528,13 +514,14 @@ export function UserDashboard() {
             <button
               onClick={handlePreview}
               disabled={loading || loadingPricelists || !readyToPreview}
-              className="mt-5 w-full rounded bg-[#28258b] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-5 w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.99]"
+              style={{ background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' }}
             >
-              {loading ? 'Loading Preview...' : 'Preview Invoice Match'}
+              {loading ? 'Loading Preview…' : 'Preview Invoice Match'}
             </button>
           </section>
 
-          <aside className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+          <aside className="rounded-2xl bg-white p-5 shadow-md">
             <h3 className="text-base font-semibold text-slate-950">Selection Summary</h3>
             <dl className="mt-4 space-y-4 text-sm">
               <div>
@@ -564,7 +551,7 @@ export function UserDashboard() {
       )}
 
       {step === 'preview' && preview && (
-        <div className="rounded border border-slate-200 bg-white p-5 shadow-sm space-y-6">
+        <div className="rounded-2xl bg-white p-5 shadow-md space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-slate-950">Review Match Quality</h3>
@@ -653,99 +640,8 @@ export function UserDashboard() {
             </div>
           )}
 
-          {preview.unmatched.length > 0 && (
-            <div className="rounded border border-amber-200 bg-amber-50 p-4">
-              <h4 className="font-semibold text-amber-900 mb-2">
-                {preview.unmatched.length} transactions need review
-              </h4>
-              <div className="text-sm text-amber-800 space-y-2">
-                {preview.unmatched.slice(0, 5).map((u, i) => (
-                  <div key={i} className="border-b border-amber-200 pb-2 last:border-0">
-                    <div className="font-medium">
-                      {u.transaction.segment} - {u.transaction.movementType} 
-                      {u.transaction.category && ` (${u.transaction.category})`}
-                    </div>
-                    <div className="ml-2 text-xs text-amber-700">
-                      Order: {u.transaction.orderNumber} | QTY: {u.transaction.quantity} | {u.reason}
-                    </div>
-                    {u.alternatives && u.alternatives.length > 0 && (
-                      <div className="ml-2 mt-1 text-xs text-amber-700">
-                        Possible matches: {u.alternatives.length} alternatives
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {preview.unmatched.length > 5 && (
-                  <div className="text-center">... and {preview.unmatched.length - 5} more</div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {preview.reviewQueue && preview.reviewQueue.length > 0 && (
-            <ReviewQueuePanel
-              reviewQueue={preview.reviewQueue}
-              resolvedItems={resolvedItems}
-              onResolve={(txId: string, idx: number | null) =>
-                setResolvedItems(prev =>
-                  idx === null
-                    ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== txId))
-                    : { ...prev, [txId]: idx }
-                )
-              }
-              onApply={handleApplyResolutions}
-              loading={loading}
-            />
-          )}
-
-          {/* Show matched transactions summary */}
-          {preview.summary.matched > 0 && (
-            <div className="rounded border border-green-200 bg-green-50 p-4">
-              <h4 className="font-semibold text-green-800 mb-2">
-                {preview.summary.matched} Matched Transactions
-              </h4>
-              <p className="text-sm text-green-700">
-                These transactions will be aggregated and filled into the pricelist:
-              </p>
-              <div className="mt-2 text-sm text-green-700">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>Inbound Orders: {preview.transactions?.filter((t) => t.segment === 'Inbound').length || 0}</div>
-                  <div>Outbound Orders: {preview.transactions?.filter((t) => t.segment === 'Outbound').length || 0}</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {reviewWarning && (
-            <div className="rounded-lg border border-red-300 bg-red-50 p-4">
-              <p className="text-sm font-semibold text-red-900">
-                {reviewWarning.count} transaction{reviewWarning.count !== 1 ? 's' : ''} still need your selection
-              </p>
-              <p className="mt-1 text-sm text-red-800">
-                Scroll up to the review queue and pick the correct pricelist row for each one. If you skip them, those transactions will be missing from the invoice.
-              </p>
-              <div className="mt-3 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setConfirmedReviewSkip(true); executeGenerate(confirmedDuplicate, true); }}
-                  disabled={loading}
-                  className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-                >
-                  Skip them and generate anyway
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setReviewWarning(null); setConfirmedReviewSkip(false); }}
-                  className="rounded border border-red-300 px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-100"
-                >
-                  Go back and resolve
-                </button>
-              </div>
-            </div>
-          )}
-
           {duplicateWarning && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
               <p className="text-sm font-semibold text-amber-900">
                 An invoice for this period was already generated
               </p>
@@ -755,16 +651,16 @@ export function UserDashboard() {
               <div className="mt-3 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => { setConfirmedDuplicate(true); executeGenerate(true, confirmedReviewSkip); }}
+                  onClick={() => { setConfirmedDuplicate(true); executeGenerate(true); }}
                   disabled={loading}
-                  className="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                  className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
                 >
                   Generate anyway
                 </button>
                 <button
                   type="button"
                   onClick={() => { setDuplicateWarning(null); setConfirmedDuplicate(false); }}
-                  className="rounded border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+                  className="rounded-lg border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
                 >
                   Cancel
                 </button>
@@ -800,7 +696,7 @@ export function UserDashboard() {
       )}
 
       {step === 'result' && result && (
-        <div className="rounded border border-slate-200 bg-white p-5 shadow-sm space-y-6">
+        <div className="rounded-2xl bg-white p-5 shadow-md space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-slate-950">
@@ -942,7 +838,8 @@ export function UserDashboard() {
             <button
               onClick={handleDownload}
               disabled={loading}
-              className="flex-1 rounded bg-[#28258b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
+              className="flex-1 rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-lg active:scale-[0.99]"
+              style={{ background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' }}
             >
               Download Invoice Excel
             </button>
@@ -953,343 +850,11 @@ export function UserDashboard() {
   );
 }
 
-// Build a stable fingerprint for a set of alternatives so we can group
-// transactions that face the exact same pricelist choices.
-function altFingerprint(alternatives: Array<{ lineItem: { row: number; rate: number } }>): string {
-  return alternatives.map(a => `${a.lineItem.row}:${a.lineItem.rate}`).sort().join('|');
-}
-
-// Human-readable label for a pricelist line item — segment/clause first,
-// remark only as secondary context, always show row number.
-function altLabel(lineItem: {
-  segment: string; clause: string; remark: string; rate: number; row: number;
-}): { primary: string; secondary: string; rowNum: string } {
-  const segClause = [lineItem.segment, lineItem.clause].filter(Boolean).join(' / ');
-  const primary   = segClause || lineItem.remark || `Row ${lineItem.row}`;
-  const secondary = segClause && lineItem.remark && lineItem.remark !== primary
-    ? lineItem.remark
-    : '';
-  return { primary, secondary, rowNum: `Row ${lineItem.row}` };
-}
-
-function ReviewQueuePanel({
-  reviewQueue,
-  resolvedItems,
-  onResolve,
-  onApply,
-  loading,
-}: {
-  reviewQueue: NonNullable<PreviewResponse['reviewQueue']>;
-  resolvedItems: Record<string, number>;
-  onResolve: (txId: string, idx: number | null) => void;
-  onApply: () => void;
-  loading: boolean;
-}) {
-  const [flagged,      setFlagged]      = useState<Set<string>>(new Set());
-  const [expandedGrps, setExpandedGrps] = useState<Set<string>>(new Set());
-  const [flaggedOpen,  setFlaggedOpen]  = useState(false);
-
-  const toggleFlag = (txId: string) => {
-    setFlagged(prev => {
-      const next = new Set(prev);
-      if (next.has(txId)) { next.delete(txId); }
-      else { next.add(txId); onResolve(txId, null); }
-      return next;
-    });
-  };
-
-  const toggleGroup = (key: string) =>
-    setExpandedGrps(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-
-  // Apply one alternative choice to every transaction in a group
-  const applyToGroup = (items: typeof reviewQueue, idx: number) =>
-    items.forEach(item => onResolve(item.transaction.id, idx));
-
-  const activeItems  = reviewQueue.filter(item => !flagged.has(item.transaction.id));
-  const flaggedItems = reviewQueue.filter(item =>  flagged.has(item.transaction.id));
-
-  // Group active items by their alternative fingerprint
-  const groupMap = new Map<string, typeof reviewQueue>();
-  for (const item of activeItems) {
-    const key = altFingerprint(item.alternatives);
-    if (!groupMap.has(key)) groupMap.set(key, []);
-    groupMap.get(key)!.push(item);
-  }
-  const groups = Array.from(groupMap.entries());
-
-  const resolvedCount = reviewQueue.filter(item =>
-    resolvedItems[item.transaction.id] !== undefined || flagged.has(item.transaction.id)
-  ).length;
-  const allDone = resolvedCount === reviewQueue.length;
-
-  const renderGroup = (groupKey: string, items: typeof reviewQueue) => {
-    const representative = items[0];
-    const alts           = representative.alternatives;
-    const maxScore       = Math.max(...alts.map(a => a.score));
-    const isMulti        = items.length > 1;
-    const isExpanded     = expandedGrps.has(groupKey);
-
-    // How many in this group are resolved?
-    const groupResolved = items.filter(
-      item => resolvedItems[item.transaction.id] !== undefined
-    ).length;
-    const groupChoice   = resolvedItems[items[0].transaction.id]; // choice made on first item
-
-    // Representative transaction for labelling the group
-    const tx = representative.transaction;
-    const groupLabel = [tx.movementType, tx.category].filter(Boolean).join(' · ') || 'Transaction';
-
-    return (
-      <div key={groupKey} className="rounded-lg border bg-white overflow-hidden">
-
-        {/* Group header */}
-        <div className={`px-4 py-3 border-b ${groupResolved === items.length ? 'border-green-100 bg-green-50' : 'border-orange-100 bg-orange-50/40'}`}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              {groupResolved === items.length
-                ? <span className="text-green-600 text-sm font-semibold">✓</span>
-                : <span className="text-orange-500 text-sm">●</span>
-              }
-              <span className="font-semibold text-slate-900 text-sm truncate">{groupLabel}</span>
-              {isMulti && (
-                <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                  {items.length} transactions
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {groupResolved > 0 && groupResolved < items.length && (
-                <span className="text-xs text-slate-500">{groupResolved}/{items.length} done</span>
-              )}
-              {isMulti && (
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(groupKey)}
-                  className="text-xs text-slate-500 underline hover:text-slate-800"
-                >
-                  {isExpanded ? 'Collapse' : `View all ${items.length}`}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Transaction context — the fields that tell the user WHAT this is */}
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-            {tx.warehouse    && <span><span className="font-semibold text-slate-500">Warehouse</span> {tx.warehouse}</span>}
-            {tx.segment      && <span><span className="font-semibold text-slate-500">Segment</span> {tx.segment}</span>}
-            {tx.description  && <span className="truncate max-w-xs"><span className="font-semibold text-slate-500">Description</span> {tx.description}</span>}
-            {tx.quantity != null && <span><span className="font-semibold text-slate-500">Qty</span> {tx.quantity} {tx.unitOfMeasure || ''}</span>}
-          </div>
-
-          {/* Show individual order numbers when collapsed (first 3) */}
-          {isMulti && !isExpanded && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {items.slice(0, 3).map(item => item.transaction.orderNumber && (
-                <span key={item.transaction.id} className="rounded bg-white border border-slate-200 px-1.5 py-0.5 text-xs font-mono text-slate-500">
-                  {item.transaction.orderNumber}
-                </span>
-              ))}
-              {items.length > 3 && (
-                <span className="text-xs text-slate-400">+{items.length - 3} more</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Expanded individual transactions */}
-        {isMulti && isExpanded && (
-          <div className="border-b border-slate-100 divide-y divide-slate-100">
-            {items.map(item => {
-              const t = item.transaction;
-              const isItemResolved = resolvedItems[t.id] !== undefined;
-              return (
-                <div key={t.id} className={`px-4 py-2 text-xs flex items-center gap-3 ${isItemResolved ? 'bg-green-50' : ''}`}>
-                  {isItemResolved
-                    ? <span className="text-green-600 font-semibold">✓</span>
-                    : <span className="text-orange-400">·</span>
-                  }
-                  <span className="font-mono font-semibold text-slate-700">{t.orderNumber || <em className="text-slate-400">no order</em>}</span>
-                  {t.warehouse   && <span className="text-slate-500">{t.warehouse}</span>}
-                  {t.description && <span className="text-slate-400 truncate">{t.description}</span>}
-                  {t.quantity != null && <span className="ml-auto text-slate-500 shrink-0">Qty {t.quantity}</span>}
-                  <button
-                    type="button"
-                    onClick={() => toggleFlag(t.id)}
-                    className="shrink-0 text-slate-400 hover:text-orange-600 underline"
-                  >
-                    Flag
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Pricelist alternatives */}
-        <div className="p-4 space-y-2">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-            {alts.length === 1 ? 'Confirm this pricelist row' : 'Which pricelist row is this?'}
-          </p>
-          {alts.map((alt, idx) => {
-            const isSelected  = groupChoice === idx;
-            const isBest      = alt.score === maxScore;
-            const sheet       = (alt.lineItem as any).sheet as string | undefined;
-            const rate        = alt.lineItem.rate != null
-              ? `$${Number(alt.lineItem.rate).toFixed(2)} / unit`
-              : null;
-            const { primary, secondary, rowNum } = altLabel(alt.lineItem);
-
-            return (
-              <label
-                key={idx}
-                className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                  isSelected
-                    ? 'border-[#28258b] bg-[#28258b]/5'
-                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name={`grp-${groupKey}`}
-                  checked={isSelected}
-                  onChange={() => applyToGroup(items, idx)}
-                  className="shrink-0 mt-0.5"
-                />
-                <div className="flex flex-1 items-start justify-between gap-2 min-w-0">
-                  <div className="min-w-0 space-y-0.5">
-                    {/* Primary label: segment / clause */}
-                    <span className="font-semibold text-slate-800 block">{primary}</span>
-                    {/* Secondary details row */}
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
-                      {secondary && <span>{secondary}</span>}
-                      {sheet     && <span className="text-slate-400">{sheet}</span>}
-                      <span className="text-slate-400 font-mono">{rowNum}</span>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2 mt-0.5">
-                    {rate && <span className="text-sm font-semibold text-slate-700">{rate}</span>}
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                      isBest ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      {isBest ? 'Best match' : 'Alt match'}
-                    </span>
-                  </div>
-                </div>
-              </label>
-            );
-          })}
-
-          {/* Apply to all / per-item flag actions */}
-          <div className="flex items-center justify-between pt-1">
-            {isMulti && groupChoice !== undefined && groupResolved < items.length && (
-              <button
-                type="button"
-                onClick={() => applyToGroup(items, groupChoice)}
-                className="text-xs font-semibold text-[#28258b] hover:underline"
-              >
-                Apply to all {items.length} transactions →
-              </button>
-            )}
-            {!isMulti && (
-              <button
-                type="button"
-                onClick={() => toggleFlag(representative.transaction.id)}
-                className="text-xs text-slate-500 border border-slate-200 rounded px-2 py-1 hover:border-orange-300 hover:text-orange-600 transition-colors"
-              >
-                Flag for later
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <section className="rounded-xl border border-orange-200 bg-orange-50 p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h4 className="text-base font-semibold text-orange-900">
-            {activeItems.length} transaction{activeItems.length !== 1 ? 's' : ''} need your input
-          </h4>
-          <p className="mt-1 text-sm text-orange-800">
-            {groups.length < activeItems.length
-              ? `Grouped into ${groups.length} decision${groups.length !== 1 ? 's' : ''} — choose once, apply to all similar.`
-              : 'Pick the correct pricelist row for each transaction, or flag it for later.'
-            }
-          </p>
-        </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
-          allDone ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-        }`}>
-          {resolvedCount}/{reviewQueue.length} done
-        </span>
-      </div>
-
-      {/* Groups */}
-      <div className="space-y-3">
-        {groups.map(([key, items]) => renderGroup(key, items))}
-      </div>
-
-      {/* Flagged for later */}
-      {flaggedItems.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setFlaggedOpen(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            <span>🚩 Flagged for later ({flaggedItems.length})</span>
-            <span className="text-slate-400">{flaggedOpen ? '▲' : '▼'}</span>
-          </button>
-          {flaggedOpen && (
-            <div className="border-t border-slate-100 p-3 space-y-2">
-              <p className="text-xs text-slate-500 mb-2">Excluded from invoice. Unflag to reconsider.</p>
-              {flaggedItems.map(item => {
-                const tx = item.transaction;
-                return (
-                  <div key={tx.id} className="flex items-center justify-between gap-3 rounded border border-slate-100 bg-slate-50 px-3 py-2">
-                    <div className="min-w-0 space-y-0.5">
-                      <span className="text-sm font-mono font-semibold text-slate-700">{tx.orderNumber || tx.id}</span>
-                      {tx.warehouse && <span className="ml-2 text-xs text-slate-400">{tx.warehouse}</span>}
-                      <span className="ml-2 text-xs text-slate-400">{[tx.movementType, tx.category].filter(Boolean).join(' · ')}</span>
-                    </div>
-                    <button type="button" onClick={() => toggleFlag(tx.id)}
-                      className="text-xs text-slate-500 underline hover:text-slate-800 shrink-0">
-                      Unflag
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={onApply}
-        disabled={loading || resolvedCount === 0}
-        className="w-full rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {loading
-          ? 'Updating preview…'
-          : `Confirm ${resolvedCount} resolution${resolvedCount !== 1 ? 's' : ''} & update preview`}
-      </button>
-    </section>
-  );
-}
-
 function TableauCopiedSheetsPanel({ results }: { results: TableauCopyResult[] }) {
   const hasIssues = results.some(r => r.status === 'failed' || r.status === 'skipped');
 
   return (
-    <section className="rounded border border-slate-200 bg-white p-4 space-y-3">
+    <section className="rounded-2xl bg-white p-4 shadow-md space-y-3">
       <h4 className="font-semibold text-slate-950">Tableau Copied Sheets</h4>
 
       {hasIssues && (
@@ -1375,7 +940,7 @@ function RuleDiagnosticsPanel({
   emptyMessage: string;
 }) {
   return (
-    <section className="rounded border border-slate-200 bg-white p-4">
+    <section className="rounded-2xl bg-white p-4 shadow-md">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <h4 className="font-semibold text-slate-950">Rule Review Details</h4>
         <span className="text-xs font-semibold text-slate-500">

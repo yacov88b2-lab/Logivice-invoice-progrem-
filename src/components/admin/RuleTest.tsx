@@ -166,7 +166,7 @@ function TableauCopyTestPanel({ rule, onMarkedTested }: RuleTestProps) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
+      <div className="rounded-2xl bg-white p-5 shadow-md space-y-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tableau view URL</p>
           <p className="mt-1 break-all font-mono text-sm text-[#28258b]">{url || '(none set)'}</p>
@@ -248,7 +248,7 @@ function TableauCopyTestPanel({ rule, onMarkedTested }: RuleTestProps) {
           </div>
 
           {tc?.viewFound && tc?.columns?.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Sample data ({tc.sampleRows?.length ?? 0} of {tc.totalRows} rows)
               </p>
@@ -399,7 +399,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
     <div className="space-y-6">
 
       {/* ── Transaction form ── */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl bg-white p-5 shadow-md">
         <h3 className="text-base font-semibold text-slate-900">Sample transaction</h3>
         <p className="mt-0.5 text-sm text-slate-500">
           Fill in the fields this rule cares about. Leave others blank.
@@ -421,7 +421,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
       </div>
 
       {/* ── Pricelist rows ── */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl bg-white p-5 shadow-md">
         <div className="flex items-start justify-between">
           <div>
             <h3 className="text-base font-semibold text-slate-900">Pricelist rows to match against</h3>
@@ -503,7 +503,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
 
           {/* Matched items — data.matches[].item */}
           {hasMatch && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Matched pricelist rows
               </p>
@@ -534,7 +534,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
 
           {/* Extracted / transformed data (scalar keys only) */}
           {Object.keys(extractedData).length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Extracted values</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {Object.entries(extractedData).map(([k, v]) => (
@@ -549,7 +549,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
 
           {/* Steps that ran */}
           {result.executedSteps?.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Steps executed ({result.executedSteps.length})
               </p>

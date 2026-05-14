@@ -55,15 +55,19 @@ export function InviteAcceptPage({ token }: { token: string }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+    <div
+      className="min-h-screen flex items-center justify-center p-4"
+      style={{ background: 'linear-gradient(135deg, #28258b 0%, #5b21b6 60%, #7c3aed 100%)' }}
+    >
       <div className="w-full max-w-md">
-        <div className="mb-6 text-center">
-          <img src="/logo.png" alt="Unilog SC" className="h-10 w-auto mx-auto mb-3" />
-          <h1 className="text-xl font-semibold text-slate-900">Set up your account</h1>
-          <p className="text-sm text-slate-500 mt-1">You've been invited to Unilog Invoice Control</p>
+        <div className="mb-8 text-center">
+          <div className="text-3xl font-extrabold text-white tracking-tight">Logivice</div>
+          <p className="mt-1.5 text-white/60 text-sm">Unilog SC · Invoice Processor</p>
+          <h1 className="text-xl font-semibold text-white mt-4">Set up your account</h1>
+          <p className="text-sm text-white/60 mt-1">You've been invited to Unilog Invoice Control</p>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-6">
+        <div className="rounded-2xl bg-white p-6 shadow-md">
           {!token || loadError ? (
             <div className="text-center space-y-3">
               <div className="text-red-600 text-sm">{loadError || 'Invalid invite link.'}</div>
@@ -129,7 +133,8 @@ export function InviteAcceptPage({ token }: { token: string }) {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full rounded bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
+                  className="w-full rounded-lg px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-md"
+                  style={{ background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' }}
                 >
                   {submitting ? 'Creating account…' : 'Create account'}
                 </button>

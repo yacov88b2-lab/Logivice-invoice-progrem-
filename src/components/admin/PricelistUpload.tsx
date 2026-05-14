@@ -137,7 +137,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
   };
 
   return (
-    <div className="rounded border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl bg-white p-5 shadow-md">
       <div className="mb-5 border-b border-slate-200 pb-4">
         <h3 className="text-lg font-semibold text-slate-950">
           {isEditing ? 'Edit Pricelist' : 'Upload Pricelist'}
@@ -273,7 +273,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
           <button
             type="submit"
             disabled={loading}
-            className="rounded bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? 'Saving...' : (isEditing ? 'Update Pricelist' : 'Upload Pricelist')}
           </button>
