@@ -953,6 +953,25 @@ export function UserDashboard() {
   );
 }
 
+// Build a stable fingerprint for a set of alternatives so we can group
+// transactions that face the exact same pricelist choices.
+function altFingerprint(alternatives: Array<{ lineItem: { row: number; rate: number } }>): string {
+  return alternatives.map(a => `${a.lineItem.row}:${a.lineItem.rate}`).sort().join('|');
+}
+
+// Human-readable label for a pricelist line item — segment/clause first,
+// remark only as secondary context, always show row number.
+function altLabel(lineItem: {
+  segment: string; clause: string; remark: string; rate: number; row: number;
+}): { primary: string; secondary: string; rowNum: string } {
+  const segClause = [lineItem.segment, lineItem.clause].filter(Boolean).join(' / ');
+  const primary   = segClause || lineItem.remark || `Row ${lineItem.row}`;
+  const secondary = segClause && lineItem.remark && lineItem.remark !== primary
+    ? lineItem.remark
+    : '';
+  return { primary, secondary, rowNum: `Row ${lineItem.row}` };
+}
+
 function ReviewQueuePanel({
   reviewQueue,
   resolvedItems,
@@ -966,105 +985,168 @@ function ReviewQueuePanel({
   onApply: () => void;
   loading: boolean;
 }) {
-  const [flagged, setFlagged] = useState<Set<string>>(new Set());
-  const [flaggedOpen, setFlaggedOpen] = useState(false);
+  const [flagged,      setFlagged]      = useState<Set<string>>(new Set());
+  const [expandedGrps, setExpandedGrps] = useState<Set<string>>(new Set());
+  const [flaggedOpen,  setFlaggedOpen]  = useState(false);
 
   const toggleFlag = (txId: string) => {
     setFlagged(prev => {
       const next = new Set(prev);
-      if (next.has(txId)) {
-        next.delete(txId);
-      } else {
-        next.add(txId);
-        onResolve(txId, null);
-      }
+      if (next.has(txId)) { next.delete(txId); }
+      else { next.add(txId); onResolve(txId, null); }
       return next;
     });
   };
 
-  const activeItems   = reviewQueue.filter(item => !flagged.has(item.transaction.id));
-  const flaggedItems  = reviewQueue.filter(item =>  flagged.has(item.transaction.id));
-  const confirmItems  = activeItems.filter(item => item.alternatives.length === 1);
-  const chooseItems   = activeItems.filter(item => item.alternatives.length > 1);
+  const toggleGroup = (key: string) =>
+    setExpandedGrps(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  // Apply one alternative choice to every transaction in a group
+  const applyToGroup = (items: typeof reviewQueue, idx: number) =>
+    items.forEach(item => onResolve(item.transaction.id, idx));
+
+  const activeItems  = reviewQueue.filter(item => !flagged.has(item.transaction.id));
+  const flaggedItems = reviewQueue.filter(item =>  flagged.has(item.transaction.id));
+
+  // Group active items by their alternative fingerprint
+  const groupMap = new Map<string, typeof reviewQueue>();
+  for (const item of activeItems) {
+    const key = altFingerprint(item.alternatives);
+    if (!groupMap.has(key)) groupMap.set(key, []);
+    groupMap.get(key)!.push(item);
+  }
+  const groups = Array.from(groupMap.entries());
 
   const resolvedCount = reviewQueue.filter(item =>
     resolvedItems[item.transaction.id] !== undefined || flagged.has(item.transaction.id)
   ).length;
   const allDone = resolvedCount === reviewQueue.length;
 
-  const renderCard = (item: typeof reviewQueue[0], mode: 'confirm' | 'choose') => {
-    const txId = item.transaction.id;
-    const tx   = item.transaction;
-    const isResolved = resolvedItems[txId] !== undefined;
-    const maxScore   = Math.max(...item.alternatives.map(a => a.score));
+  const renderGroup = (groupKey: string, items: typeof reviewQueue) => {
+    const representative = items[0];
+    const alts           = representative.alternatives;
+    const maxScore       = Math.max(...alts.map(a => a.score));
+    const isMulti        = items.length > 1;
+    const isExpanded     = expandedGrps.has(groupKey);
 
-    const chips = [
-      tx.movementType,
-      tx.category,
-      tx.quantity != null ? `${tx.quantity} ${tx.unitOfMeasure || 'units'}` : null,
-      tx.date ? new Date(tx.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null,
-    ].filter(Boolean);
+    // How many in this group are resolved?
+    const groupResolved = items.filter(
+      item => resolvedItems[item.transaction.id] !== undefined
+    ).length;
+    const groupChoice   = resolvedItems[items[0].transaction.id]; // choice made on first item
+
+    // Representative transaction for labelling the group
+    const tx = representative.transaction;
+    const groupLabel = [tx.movementType, tx.category].filter(Boolean).join(' · ') || 'Transaction';
 
     return (
-      <div
-        key={txId}
-        className={`rounded-lg border bg-white p-4 transition-colors ${
-          isResolved ? 'border-green-300' : 'border-orange-200'
-        }`}
-      >
-        {/* Transaction identity */}
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="min-w-0">
-            {tx.orderNumber ? (
-              <div className="text-base font-bold text-slate-900 font-mono tracking-wide">
-                {tx.orderNumber}
-              </div>
-            ) : (
-              <div className="text-sm font-semibold text-slate-400 italic">No order number</div>
-            )}
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {chips.map((chip, i) => (
-                <span key={i} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 font-medium">
-                  {chip}
+      <div key={groupKey} className="rounded-lg border bg-white overflow-hidden">
+
+        {/* Group header */}
+        <div className={`px-4 py-3 border-b ${groupResolved === items.length ? 'border-green-100 bg-green-50' : 'border-orange-100 bg-orange-50/40'}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              {groupResolved === items.length
+                ? <span className="text-green-600 text-sm font-semibold">✓</span>
+                : <span className="text-orange-500 text-sm">●</span>
+              }
+              <span className="font-semibold text-slate-900 text-sm truncate">{groupLabel}</span>
+              {isMulti && (
+                <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                  {items.length} transactions
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {groupResolved > 0 && groupResolved < items.length && (
+                <span className="text-xs text-slate-500">{groupResolved}/{items.length} done</span>
+              )}
+              {isMulti && (
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(groupKey)}
+                  className="text-xs text-slate-500 underline hover:text-slate-800"
+                >
+                  {isExpanded ? 'Collapse' : `View all ${items.length}`}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Transaction context — the fields that tell the user WHAT this is */}
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+            {tx.warehouse    && <span><span className="font-semibold text-slate-500">Warehouse</span> {tx.warehouse}</span>}
+            {tx.segment      && <span><span className="font-semibold text-slate-500">Segment</span> {tx.segment}</span>}
+            {tx.description  && <span className="truncate max-w-xs"><span className="font-semibold text-slate-500">Description</span> {tx.description}</span>}
+            {tx.quantity != null && <span><span className="font-semibold text-slate-500">Qty</span> {tx.quantity} {tx.unitOfMeasure || ''}</span>}
+          </div>
+
+          {/* Show individual order numbers when collapsed (first 3) */}
+          {isMulti && !isExpanded && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {items.slice(0, 3).map(item => item.transaction.orderNumber && (
+                <span key={item.transaction.id} className="rounded bg-white border border-slate-200 px-1.5 py-0.5 text-xs font-mono text-slate-500">
+                  {item.transaction.orderNumber}
                 </span>
               ))}
+              {items.length > 3 && (
+                <span className="text-xs text-slate-400">+{items.length - 3} more</span>
+              )}
             </div>
-            {item.reason && (
-              <p className="mt-1.5 text-xs text-orange-700 italic">{item.reason}</p>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {isResolved && <span className="text-xs font-semibold text-green-700">✓ Done</span>}
-            <button
-              type="button"
-              onClick={() => toggleFlag(txId)}
-              className="rounded px-2 py-1 text-xs font-medium text-slate-500 border border-slate-200 hover:border-orange-300 hover:text-orange-600 transition-colors"
-            >
-              Flag for later
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* Options */}
-        <p className="mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-          {mode === 'confirm' ? 'Does this match look correct?' : 'Which pricelist row is this?'}
-        </p>
-        <div className="space-y-1.5">
-          {item.alternatives.map((alt, idx) => {
-            const isSelected = resolvedItems[txId] === idx;
-            const isBest     = alt.score === maxScore;
-            const name = alt.lineItem.remark
-              || [alt.lineItem.segment, alt.lineItem.clause].filter(Boolean).join(' / ')
-              || `Row ${alt.lineItem.row}`;
-            const sheet = (alt.lineItem as any).sheet as string | undefined;
-            const rate  = alt.lineItem.rate != null
+        {/* Expanded individual transactions */}
+        {isMulti && isExpanded && (
+          <div className="border-b border-slate-100 divide-y divide-slate-100">
+            {items.map(item => {
+              const t = item.transaction;
+              const isItemResolved = resolvedItems[t.id] !== undefined;
+              return (
+                <div key={t.id} className={`px-4 py-2 text-xs flex items-center gap-3 ${isItemResolved ? 'bg-green-50' : ''}`}>
+                  {isItemResolved
+                    ? <span className="text-green-600 font-semibold">✓</span>
+                    : <span className="text-orange-400">·</span>
+                  }
+                  <span className="font-mono font-semibold text-slate-700">{t.orderNumber || <em className="text-slate-400">no order</em>}</span>
+                  {t.warehouse   && <span className="text-slate-500">{t.warehouse}</span>}
+                  {t.description && <span className="text-slate-400 truncate">{t.description}</span>}
+                  {t.quantity != null && <span className="ml-auto text-slate-500 shrink-0">Qty {t.quantity}</span>}
+                  <button
+                    type="button"
+                    onClick={() => toggleFlag(t.id)}
+                    className="shrink-0 text-slate-400 hover:text-orange-600 underline"
+                  >
+                    Flag
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Pricelist alternatives */}
+        <div className="p-4 space-y-2">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+            {alts.length === 1 ? 'Confirm this pricelist row' : 'Which pricelist row is this?'}
+          </p>
+          {alts.map((alt, idx) => {
+            const isSelected  = groupChoice === idx;
+            const isBest      = alt.score === maxScore;
+            const sheet       = (alt.lineItem as any).sheet as string | undefined;
+            const rate        = alt.lineItem.rate != null
               ? `$${Number(alt.lineItem.rate).toFixed(2)} / unit`
               : null;
+            const { primary, secondary, rowNum } = altLabel(alt.lineItem);
 
             return (
               <label
                 key={idx}
-                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                   isSelected
                     ? 'border-[#28258b] bg-[#28258b]/5'
                     : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
@@ -1072,28 +1154,56 @@ function ReviewQueuePanel({
               >
                 <input
                   type="radio"
-                  name={`resolve-${txId}`}
+                  name={`grp-${groupKey}`}
                   checked={isSelected}
-                  onChange={() => onResolve(txId, idx)}
-                  className="shrink-0"
+                  onChange={() => applyToGroup(items, idx)}
+                  className="shrink-0 mt-0.5"
                 />
-                <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
-                  <div className="min-w-0">
-                    <span className="font-medium text-slate-800 truncate block">{name}</span>
-                    {sheet && <span className="text-xs text-slate-400">{sheet}</span>}
+                <div className="flex flex-1 items-start justify-between gap-2 min-w-0">
+                  <div className="min-w-0 space-y-0.5">
+                    {/* Primary label: segment / clause */}
+                    <span className="font-semibold text-slate-800 block">{primary}</span>
+                    {/* Secondary details row */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                      {secondary && <span>{secondary}</span>}
+                      {sheet     && <span className="text-slate-400">{sheet}</span>}
+                      <span className="text-slate-400 font-mono">{rowNum}</span>
+                    </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2 mt-0.5">
                     {rate && <span className="text-sm font-semibold text-slate-700">{rate}</span>}
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                       isBest ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
                     }`}>
-                      {isBest ? 'Best match' : 'Also matches'}
+                      {isBest ? 'Best match' : 'Alt match'}
                     </span>
                   </div>
                 </div>
               </label>
             );
           })}
+
+          {/* Apply to all / per-item flag actions */}
+          <div className="flex items-center justify-between pt-1">
+            {isMulti && groupChoice !== undefined && groupResolved < items.length && (
+              <button
+                type="button"
+                onClick={() => applyToGroup(items, groupChoice)}
+                className="text-xs font-semibold text-[#28258b] hover:underline"
+              >
+                Apply to all {items.length} transactions →
+              </button>
+            )}
+            {!isMulti && (
+              <button
+                type="button"
+                onClick={() => toggleFlag(representative.transaction.id)}
+                className="text-xs text-slate-500 border border-slate-200 rounded px-2 py-1 hover:border-orange-300 hover:text-orange-600 transition-colors"
+              >
+                Flag for later
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1108,7 +1218,10 @@ function ReviewQueuePanel({
             {activeItems.length} transaction{activeItems.length !== 1 ? 's' : ''} need your input
           </h4>
           <p className="mt-1 text-sm text-orange-800">
-            Look up the order number in Logivice, then pick the correct pricelist row — or flag it for later.
+            {groups.length < activeItems.length
+              ? `Grouped into ${groups.length} decision${groups.length !== 1 ? 's' : ''} — choose once, apply to all similar.`
+              : 'Pick the correct pricelist row for each transaction, or flag it for later.'
+            }
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
@@ -1118,41 +1231,12 @@ function ReviewQueuePanel({
         </span>
       </div>
 
-      {/* Section 1 — Confirm single match */}
-      {confirmItems.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="h-px flex-1 bg-orange-200" />
-            <span className="text-xs font-semibold text-orange-600 uppercase tracking-wide">
-              Confirm match ({confirmItems.length})
-            </span>
-            <div className="h-px flex-1 bg-orange-200" />
-          </div>
-          <p className="text-xs text-orange-700">We found one possible row for each of these — please confirm it's correct.</p>
-          <div className="space-y-3">
-            {confirmItems.map(item => renderCard(item, 'confirm'))}
-          </div>
-        </div>
-      )}
+      {/* Groups */}
+      <div className="space-y-3">
+        {groups.map(([key, items]) => renderGroup(key, items))}
+      </div>
 
-      {/* Section 2 — Choose between multiple */}
-      {chooseItems.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="h-px flex-1 bg-orange-200" />
-            <span className="text-xs font-semibold text-orange-600 uppercase tracking-wide">
-              Choose the right row ({chooseItems.length})
-            </span>
-            <div className="h-px flex-1 bg-orange-200" />
-          </div>
-          <p className="text-xs text-orange-700">We found multiple possible rows — pick the one that's correct.</p>
-          <div className="space-y-3">
-            {chooseItems.map(item => renderCard(item, 'choose'))}
-          </div>
-        </div>
-      )}
-
-      {/* Section 3 — Flagged for later */}
+      {/* Flagged for later */}
       {flaggedItems.length > 0 && (
         <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
           <button
@@ -1165,20 +1249,18 @@ function ReviewQueuePanel({
           </button>
           {flaggedOpen && (
             <div className="border-t border-slate-100 p-3 space-y-2">
-              <p className="text-xs text-slate-500 mb-2">These will be excluded from the invoice. Unflag to reconsider.</p>
+              <p className="text-xs text-slate-500 mb-2">Excluded from invoice. Unflag to reconsider.</p>
               {flaggedItems.map(item => {
                 const tx = item.transaction;
                 return (
                   <div key={tx.id} className="flex items-center justify-between gap-3 rounded border border-slate-100 bg-slate-50 px-3 py-2">
-                    <div className="min-w-0">
+                    <div className="min-w-0 space-y-0.5">
                       <span className="text-sm font-mono font-semibold text-slate-700">{tx.orderNumber || tx.id}</span>
+                      {tx.warehouse && <span className="ml-2 text-xs text-slate-400">{tx.warehouse}</span>}
                       <span className="ml-2 text-xs text-slate-400">{[tx.movementType, tx.category].filter(Boolean).join(' · ')}</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => toggleFlag(tx.id)}
-                      className="text-xs text-slate-500 underline hover:text-slate-800 shrink-0"
-                    >
+                    <button type="button" onClick={() => toggleFlag(tx.id)}
+                      className="text-xs text-slate-500 underline hover:text-slate-800 shrink-0">
                       Unflag
                     </button>
                   </div>
@@ -1197,7 +1279,7 @@ function ReviewQueuePanel({
       >
         {loading
           ? 'Updating preview…'
-          : `Confirm ${resolvedCount} selection${resolvedCount !== 1 ? 's' : ''} & update preview`}
+          : `Confirm ${resolvedCount} resolution${resolvedCount !== 1 ? 's' : ''} & update preview`}
       </button>
     </section>
   );
