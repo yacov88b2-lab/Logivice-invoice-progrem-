@@ -195,7 +195,7 @@ export function UserDashboard() {
       setError(null);
       setDuplicateWarning(null);
       setReviewWarning(null);
-      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, 1, resolvedItems, force, forceReview);
+      const data = await api.generateInvoice(Number(selectedPricelist), startDate, endDate, resolvedItems, force, forceReview);
       setResult(data);
       setStep('result');
       setConfirmedDuplicate(false);

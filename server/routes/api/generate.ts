@@ -12,7 +12,7 @@ import { pricelistStorage } from '../../services/pricelistStorage';
 import { applyTableauCopyRules } from '../../services/tableauCopyService';
 import { CustomerRuleModel } from '../../models/CustomerRule';
 import { RuleEngine } from '../../services/RuleEngine';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, type AuthenticatedRequest } from '../../middleware/auth';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -375,11 +375,11 @@ router.post('/invoice', async (req, res) => {
       start_date,
       end_date,
       use_excel_data = true,
-      user_id = 1,
       resolvedItems,
       force = false,
       force_review = false
     } = req.body;
+    const user_id = parseInt((req as AuthenticatedRequest).user.sub) || 1;
 
     if (!pricelist_id || !start_date || !end_date) {
       return res.status(400).json({ 

@@ -305,17 +305,9 @@ export const api = {
   },
 
   getTableauOptions: async () => {
-    const res = await fetch(`${API_BASE}/tableau/options`);
-    if (!res.ok) {
-      let msg = 'Failed to fetch Tableau options';
-      try {
-        const data = await res.json();
-        if (data?.error) msg = String(data.error);
-      } catch {
-        // ignore
-      }
-      throw new Error(msg);
-    }
+    const res = await fetch(`${API_BASE}/tableau/options`, { headers: authHeaders() });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to fetch Tableau options'));
     return res.json() as Promise<{ customers: string[]; warehouses: string[] }>;
   },
 
@@ -333,8 +325,8 @@ export const api = {
     return res.json();
   },
 
-  generateInvoice: async (pricelistId: number, startDate: string, endDate: string, userId: number = 1, resolvedItems?: Record<string, number>, force = false, forceReview = false) => {
-    const body: Record<string, unknown> = { pricelist_id: pricelistId, start_date: startDate, end_date: endDate, user_id: userId, force, force_review: forceReview };
+  generateInvoice: async (pricelistId: number, startDate: string, endDate: string, resolvedItems?: Record<string, number>, force = false, forceReview = false) => {
+    const body: Record<string, unknown> = { pricelist_id: pricelistId, start_date: startDate, end_date: endDate, force, force_review: forceReview };
     if (resolvedItems && Object.keys(resolvedItems).length > 0) body.resolvedItems = resolvedItems;
     const res = await fetch(`${API_BASE}/generate/invoice`, {
       method: 'POST',
@@ -419,7 +411,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/rules/${id}/toggle`, {
       method: 'PATCH',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ enabled, updated_by: 'admin' }),
+      body: JSON.stringify({ enabled }),
     });
     if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to toggle rule'));
@@ -430,7 +422,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/rules/${id}/create-version`, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ created_by: 'admin' }),
+      body: JSON.stringify({}),
     });
     if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to create draft copy'));
@@ -441,7 +433,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/rules/${id}`, {
       method: 'DELETE',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ updated_by: 'admin' }),
+      body: JSON.stringify({}),
     });
     if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to delete rule'));
@@ -462,7 +454,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/rules/${id}/mark-tested`, {
       method: 'PATCH',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ tested_by: 'admin' }),
+      body: JSON.stringify({}),
     });
     if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to mark rule as tested'));
@@ -473,7 +465,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/rules/${id}/approve`, {
       method: 'PATCH',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ approved_by: 'admin' }),
+      body: JSON.stringify({}),
     });
     if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to approve rule'));
@@ -484,7 +476,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/rules/${id}/revert-to-draft`, {
       method: 'PATCH',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ reverted_by: 'admin' }),
+      body: JSON.stringify({}),
     });
     if (handle401(res)) throw new Error('Session expired');
     if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to revert rule to draft'));

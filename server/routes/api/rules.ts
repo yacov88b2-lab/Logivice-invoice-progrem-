@@ -5,7 +5,7 @@ import { TableauAPIClient } from '../../services/tableauAPI';
 import { parseTableauViewUrl } from '../../rules/_base';
 import { validateAssistantSteps } from '../../services/stepValidator';
 import db from '../../db';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, type AuthenticatedRequest } from '../../middleware/auth';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -65,7 +65,8 @@ router.get('/customer/:customer_id/active', (req, res) => {
 // Create new rule
 router.post('/', (req, res) => {
   try {
-    const { customer_id, name, description, ruleType, steps, created_by } = req.body;
+    const { customer_id, name, description, ruleType, steps } = req.body;
+    const actor = (req as AuthenticatedRequest).user.email;
 
     if (!customer_id || !name || !ruleType) {
       return res.status(400).json({ error: 'Missing required fields: customer_id, name, ruleType' });
@@ -79,7 +80,7 @@ router.post('/', (req, res) => {
       enabled: false,
       ruleType,
       steps: steps || [],
-      created_by: created_by || 'admin'
+      created_by: actor
     });
 
     res.status(201).json(rule);
@@ -92,7 +93,8 @@ router.post('/', (req, res) => {
 // Update rule
 router.put('/:id', (req, res) => {
   try {
-    const { name, description, version, enabled, steps, ruleType, updated_by } = req.body;
+    const { name, description, version, enabled, steps, ruleType } = req.body;
+    const actor = (req as AuthenticatedRequest).user.email;
     const ruleId = req.params.id;
 
     const oldRule = CustomerRuleModel.getById(ruleId);
@@ -127,7 +129,7 @@ router.put('/:id', (req, res) => {
       steps:           newSteps,
       enabled:         shouldResetApproval ? false : (enabled !== undefined ? enabled : oldRule.enabled),
       approval_status: shouldResetApproval ? 'draft' : undefined,
-      updated_by:      updated_by  || 'admin',
+      updated_by:      actor,
     });
 
     if (updated) {
@@ -144,7 +146,8 @@ router.put('/:id', (req, res) => {
 // Enable/disable rule
 router.patch('/:id/toggle', (req, res) => {
   try {
-    const { enabled, updated_by } = req.body;
+    const { enabled } = req.body;
+    const actor = (req as AuthenticatedRequest).user.email;
     const rule = CustomerRuleModel.getById(req.params.id);
 
     if (!rule) {
@@ -177,12 +180,12 @@ router.patch('/:id/toggle', (req, res) => {
 
         // Only disable rules of the same class to avoid removing a coexisting rule
         if (thisIsTableauOnly === otherIsTableauOnly) {
-          CustomerRuleModel.update(otherRule.id, { enabled: false, updated_by: updated_by || 'admin' });
+          CustomerRuleModel.update(otherRule.id, { enabled: false, updated_by: actor });
         }
       }
     }
 
-    const updated = CustomerRuleModel.update(req.params.id, { enabled, updated_by: updated_by || 'admin' });
+    const updated = CustomerRuleModel.update(req.params.id, { enabled, updated_by: actor });
     res.json(updated);
   } catch (error) {
     console.error('Error toggling rule:', error);
@@ -251,14 +254,14 @@ router.post('/:id/test', async (req, res) => {
 // Mark rule as tested
 router.patch('/:id/mark-tested', (req, res) => {
   try {
-    const { tested_by } = req.body;
+    const actor = (req as AuthenticatedRequest).user.email;
     const rule = CustomerRuleModel.getById(req.params.id);
 
     if (!rule) {
       return res.status(404).json({ error: 'Rule not found' });
     }
 
-    const updated = CustomerRuleModel.markTested(req.params.id, tested_by || 'admin');
+    const updated = CustomerRuleModel.markTested(req.params.id, actor);
     res.json(updated);
   } catch (error) {
     console.error('Error marking rule as tested:', error);
@@ -269,7 +272,7 @@ router.patch('/:id/mark-tested', (req, res) => {
 // Mark rule as approved (unlock for enabling)
 router.patch('/:id/approve', (req, res) => {
   try {
-    const { approved_by } = req.body;
+    const actor = (req as AuthenticatedRequest).user.email;
     const rule = CustomerRuleModel.getById(req.params.id);
 
     if (!rule) {
@@ -277,13 +280,13 @@ router.patch('/:id/approve', (req, res) => {
     }
 
     if (rule.approval_status !== 'tested') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Rule must be marked as tested before approval',
         current_status: rule.approval_status
       });
     }
 
-    const updated = CustomerRuleModel.markApproved(req.params.id, approved_by || 'admin');
+    const updated = CustomerRuleModel.markApproved(req.params.id, actor);
     res.json(updated);
   } catch (error) {
     console.error('Error approving rule:', error);
@@ -294,7 +297,7 @@ router.patch('/:id/approve', (req, res) => {
 // Revert rule to draft (for edits)
 router.patch('/:id/revert-to-draft', (req, res) => {
   try {
-    const { reverted_by } = req.body;
+    const actor = (req as AuthenticatedRequest).user.email;
     const rule = CustomerRuleModel.getById(req.params.id);
 
     if (!rule) {
@@ -303,12 +306,12 @@ router.patch('/:id/revert-to-draft', (req, res) => {
 
     // Cannot revert if enabled
     if (rule.enabled) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Cannot revert enabled rule to draft. Disable it first.'
       });
     }
 
-    const updated = CustomerRuleModel.revertToDraft(req.params.id, reverted_by || 'admin');
+    const updated = CustomerRuleModel.revertToDraft(req.params.id, actor);
     res.json(updated);
   } catch (error) {
     console.error('Error reverting rule:', error);
@@ -550,12 +553,12 @@ Return ONLY a JSON object in this exact format — no prose, no markdown fences:
 // Create a draft copy of any rule (used to safely iterate on active rules)
 router.post('/:id/create-version', (req, res) => {
   try {
-    const { created_by } = req.body;
+    const actor = (req as AuthenticatedRequest).user.email;
     const rule = CustomerRuleModel.getById(req.params.id);
     if (!rule) {
       return res.status(404).json({ error: 'Rule not found' });
     }
-    const copy = CustomerRuleModel.createVersion(rule.customer_id, rule.id, created_by || 'admin');
+    const copy = CustomerRuleModel.createVersion(rule.customer_id, rule.id, actor);
     if (!copy) {
       return res.status(500).json({ error: 'Failed to create draft copy' });
     }
