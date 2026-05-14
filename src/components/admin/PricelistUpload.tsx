@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { api } from "../../api";
 import type { Pricelist } from '../../types';
 
@@ -156,7 +156,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
             placeholder="e.g., Sensos - Template 2026"
           />
           {formData.customer_name && (
@@ -181,7 +181,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
                   const customer = e.target.value;
                   setFormData(prev => ({ ...prev, customer_name: customer }));
                 }}
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
                 disabled={optionsLoading || loading}
               >
                 <option value="">Select customer...</option>
@@ -216,7 +216,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
               <select
                 value={formData.warehouse_code}
                 onChange={(e) => setFormData({ ...formData, warehouse_code: e.target.value })}
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
                 disabled={optionsLoading || loading || ['Afimilk', 'Afimilk New Zealand'].includes(String(formData.customer_name || '').trim())}
               >
                 <option value="">Select warehouse...</option>
@@ -252,10 +252,10 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
             type="file"
             accept=".xlsx,.xls"
             onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="w-full rounded border border-slate-300 px-3 py-2 text-sm file:mr-4 file:rounded file:border-0 file:bg-[#28258b]/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#28258b] hover:file:bg-[#28258b]/15"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm file:mr-4 file:rounded file:border-0 file:bg-[#1e3a8a]/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#1e3a8a] hover:file:bg-[#1e3a8a]/15"
           />
           {file ? (
-            <p className="mt-1 text-sm font-medium text-[#28258b]">Selected: {file.name}</p>
+            <p className="mt-1 text-sm font-medium text-[#1e3a8a]">Selected: {file.name}</p>
           ) : isEditing ? (
             <p className="mt-1 text-sm text-amber-700 font-medium">No new file selected — existing Excel file will be kept.</p>
           ) : (
@@ -273,7 +273,7 @@ export function PricelistUpload({ pricelist, onClose }: PricelistUploadProps) {
           <button
             type="submit"
             disabled={loading}
-            className="rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-[#1e3a8a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? 'Saving...' : (isEditing ? 'Update Pricelist' : 'Upload Pricelist')}
           </button>

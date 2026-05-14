@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import db from '../db';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireMinRole } from '../middleware/auth';
 import { PricelistModel } from '../models/Pricelist';
 import { TemplateAnalyzer } from '../services/templateAnalyzer';
 import { pricelistStorage } from '../services/pricelistStorage';
@@ -61,7 +61,7 @@ router.get('/:id', (req, res) => {
 });
 
 // Upload new pricelist
-router.post('/', upload.single('file'), async (req, res) => {
+router.post('/', requireMinRole('admin'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -110,7 +110,7 @@ router.post('/', upload.single('file'), async (req, res) => {
 });
 
 // Update pricelist
-router.put('/:id', upload.single('file'), async (req, res) => {
+router.put('/:id', requireMinRole('admin'), upload.single('file'), async (req, res) => {
   try {
     const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
     const name = req.body.name as string;
@@ -161,7 +161,7 @@ router.put('/:id', upload.single('file'), async (req, res) => {
 });
 
 // Delete pricelist
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireMinRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const pricelist = PricelistModel.getById(id);

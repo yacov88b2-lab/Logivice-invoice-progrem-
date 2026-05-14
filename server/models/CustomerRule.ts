@@ -191,6 +191,7 @@ export class CustomerRuleModel {
       description: baseRule.description,
       version: baseRule.version + 1,
       enabled: false,
+      approval_status: 'draft',
       ruleType: baseRule.ruleType,
       steps: baseRule.steps,
       created_by: updatedBy || 'system',

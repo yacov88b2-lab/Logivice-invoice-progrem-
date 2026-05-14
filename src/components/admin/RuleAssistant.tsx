@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { api } from '../../api';
 
 interface Props {
@@ -86,13 +86,13 @@ export function RuleAssistant({ customerId, onSaved, onCancel }: Props) {
           value={description}
           onChange={e => setDescription(e.target.value)}
           placeholder={'e.g. "Match inbound transactions by segment and clause. Ignore the remark field. For outbound, also require category to match."'}
-          className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+          className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
         />
       </div>
 
       <button type="button" onClick={handleSuggest}
         disabled={loadingSuggest || description.trim().length < 5}
-        className="rounded-lg bg-[#28258b] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50">
+        className="rounded-lg bg-[#1e3a8a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:cursor-not-allowed disabled:opacity-50">
         {loadingSuggest ? 'Generating…' : 'Suggest rule steps'}
       </button>
 
@@ -101,20 +101,20 @@ export function RuleAssistant({ customerId, onSaved, onCancel }: Props) {
       )}
 
       {result && (
-        <div className="space-y-4 rounded border border-[#28258b]/20 bg-[#28258b]/5 p-4">
+        <div className="space-y-4 rounded border border-[#1e3a8a]/20 bg-[#1e3a8a]/5 p-4">
           <div>
-            <span className="text-xs font-semibold uppercase tracking-wide text-[#28258b]">Explanation</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-[#1e3a8a]">Explanation</span>
             <p className="mt-1 text-sm text-slate-700">{result.explanation}</p>
           </div>
 
           <div>
-            <span className="text-xs font-semibold uppercase tracking-wide text-[#28258b]">
+            <span className="text-xs font-semibold uppercase tracking-wide text-[#1e3a8a]">
               Suggested steps ({(result.steps as unknown[]).length})
             </span>
             <div className="mt-2 space-y-2">
               {(result.steps as any[]).map((step, i) => (
                 <div key={i} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-                  <span className="mt-0.5 shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-[#28258b] text-[10px] font-bold text-white">
+                  <span className="mt-0.5 shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-[#1e3a8a] text-[10px] font-bold text-white">
                     {i + 1}
                   </span>
                   <div className="min-w-0 text-sm">
@@ -135,7 +135,7 @@ export function RuleAssistant({ customerId, onSaved, onCancel }: Props) {
             </div>
           </div>
 
-          <div className="border-t border-[#28258b]/10 pt-4 space-y-3">
+          <div className="border-t border-[#1e3a8a]/10 pt-4 space-y-3">
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Rule name</label>
               <input
@@ -143,7 +143,7 @@ export function RuleAssistant({ customerId, onSaved, onCancel }: Props) {
                 value={ruleName}
                 onChange={e => setRuleName(e.target.value)}
                 placeholder="Name for this rule"
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
               />
             </div>
 

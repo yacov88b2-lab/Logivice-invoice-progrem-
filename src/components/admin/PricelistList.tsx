@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { api } from "../../api";
 import type { Pricelist } from '../../types';
 import { toast } from '../../toast';
@@ -66,7 +66,7 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
         {error}
         <button 
           onClick={fetchPricelists}
-          className="ml-4 font-semibold text-[#28258b] hover:underline"
+          className="ml-4 font-semibold text-[#1e3a8a] hover:underline"
         >
           Retry
         </button>
@@ -156,7 +156,7 @@ export function PricelistList({ onEdit, onRefresh, refreshTrigger }: PricelistLi
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDownload(p.id)}
-                    className="rounded-lg bg-[#28258b]/10 px-3 py-1 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15"
+                    className="rounded-lg bg-[#1e3a8a]/10 px-3 py-1 text-xs font-semibold text-[#1e3a8a] hover:bg-[#1e3a8a]/15"
                   >
                     Download
                   </button>

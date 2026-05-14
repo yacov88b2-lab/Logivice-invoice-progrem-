@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { api } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -115,7 +115,7 @@ export function UserManagement() {
               onClick={() => setActiveTab(tab)}
               className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
                 activeTab === tab
-                  ? 'bg-[#28258b] text-white'
+                  ? 'bg-[#1e3a8a] text-white'
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
@@ -126,7 +126,7 @@ export function UserManagement() {
         {me && ROLE_RANK[me.role as Role] >= ROLE_RANK.admin && (
           <button
             onClick={() => setShowInvite(true)}
-            className="rounded-lg bg-[#28258b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]"
+            className="rounded-lg bg-[#1e3a8a] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]"
           >
             + Invite User
           </button>
@@ -240,7 +240,7 @@ function UsersTable({
                           Enable
                         </button>
                       )}
-                      <button onClick={() => onReset(u)} className="text-xs text-[#28258b] hover:underline">
+                      <button onClick={() => onReset(u)} className="text-xs text-[#1e3a8a] hover:underline">
                         Reset pwd
                       </button>
                     </div>
@@ -319,7 +319,7 @@ function InvitesTable({
                 <td className="px-4 py-3">
                   {canAct && inv.status === 'pending' && !expired && (
                     <div className="flex gap-2 justify-end">
-                      <button onClick={() => onResend(inv)} className="text-xs text-[#28258b] hover:underline">
+                      <button onClick={() => onResend(inv)} className="text-xs text-[#1e3a8a] hover:underline">
                         Resend
                       </button>
                       <button onClick={() => onRevoke(inv)} className="text-xs text-red-600 hover:underline">
@@ -328,7 +328,7 @@ function InvitesTable({
                     </div>
                   )}
                   {canAct && (inv.status === 'expired' || (inv.status === 'pending' && expired) || inv.status === 'revoked') && (
-                    <button onClick={() => onResend(inv)} className="text-xs text-[#28258b] hover:underline">
+                    <button onClick={() => onResend(inv)} className="text-xs text-[#1e3a8a] hover:underline">
                       Reissue
                     </button>
                   )}
@@ -390,13 +390,13 @@ function InviteUserModal({
           <div className="flex gap-2">
             <button
               onClick={() => navigator.clipboard.writeText(inviteLink).catch(() => {})}
-              className="flex-1 rounded border border-[#28258b] px-3 py-2 text-sm text-[#28258b] hover:bg-slate-50"
+              className="flex-1 rounded border border-[#1e3a8a] px-3 py-2 text-sm text-[#1e3a8a] hover:bg-slate-50"
             >
               Copy link
             </button>
             <button
               onClick={onInvited}
-              className="flex-1 rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
+              className="flex-1 rounded-lg bg-[#1e3a8a] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
             >
               Done
             </button>
@@ -423,7 +423,7 @@ function InviteUserModal({
               onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
               required
               placeholder="name@unilog.company"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none"
             />
           </div>
 
@@ -435,7 +435,7 @@ function InviteUserModal({
               type="text"
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none"
             />
           </div>
 
@@ -456,7 +456,7 @@ function InviteUserModal({
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 rounded-lg bg-[#28258b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
+              className="flex-1 rounded-lg bg-[#1e3a8a] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
             >
               {loading ? 'Sending…' : 'Send invite'}
             </button>
@@ -520,7 +520,7 @@ function ResetPasswordModal({
               onChange={e => setNewPassword(e.target.value)}
               minLength={8}
               required
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none"
             />
           </div>
 

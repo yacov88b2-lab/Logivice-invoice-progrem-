@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+﻿import { useState, useRef } from 'react';
 import { api } from '../../api';
 import type { CustomerRuleDefinition, RuleStep } from './RuleBuilder';
 import { toast } from '../../toast';
@@ -169,7 +169,7 @@ export function RuleWizard({ customerId, existingRule, onSave }: RuleWizardProps
           <div key={label} className="flex items-center gap-1">
             <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors ${
               i < stepIndex  ? 'bg-[#58a967] text-white' :
-              i === stepIndex ? 'bg-[#28258b] text-white' :
+              i === stepIndex ? 'bg-[#1e3a8a] text-white' :
                                 'bg-slate-200 text-slate-500'
             }`}>
               {i < stepIndex ? '✓' : i + 1}
@@ -210,7 +210,7 @@ export function RuleWizard({ customerId, existingRule, onSave }: RuleWizardProps
           type="button"
           disabled={!canProceed() || saving}
           onClick={handleNext}
-          className="rounded-lg bg-[#28258b] px-6 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-40"
+          className="rounded-lg bg-[#1e3a8a] px-6 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-40"
         >
           {saving ? 'Saving…' : step === 'review' ? '✓ Save Rule' : 'Next →'}
         </button>
@@ -244,7 +244,7 @@ function NameStep({
           value={state.ruleName}
           onChange={e => update({ ruleName: e.target.value })}
           placeholder="e.g., Match storage transactions by segment"
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
         />
       </div>
 
@@ -270,7 +270,7 @@ function NameStep({
           onChange={e => update({ notes: e.target.value })}
           rows={3}
           placeholder="Describe in plain English what this rule should do…"
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
         />
         {isListening && (
           <p className="mt-1 text-xs text-red-600">🔴 Listening… speak now. Click "Stop recording" when done.</p>
@@ -299,7 +299,7 @@ function NameStep({
               ? 'https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName'
               : 'https://  — paste a link to a Tableau view, spreadsheet, or any reference'
           }
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
         />
         <p className="mt-1 text-xs text-slate-400">
           {state.intent === 'tableau_copy'
@@ -379,7 +379,7 @@ function IntentStep({
             }}
             className={`rounded-xl border-2 p-4 text-left transition-all ${
               state.intent === intent.id
-                ? 'border-[#28258b] bg-[#28258b]/5 shadow-sm'
+                ? 'border-[#1e3a8a] bg-[#1e3a8a]/5 shadow-sm'
                 : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
             }`}
           >
@@ -443,7 +443,7 @@ function MatchConfig({
               onClick={() => update({ matchField: f.value })}
               className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
                 state.matchField === f.value
-                  ? 'border-[#28258b] bg-[#28258b] text-white'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a] text-white'
                   : 'border-slate-300 text-slate-700 hover:border-slate-400 hover:bg-slate-50'
               }`}
             >
@@ -455,7 +455,7 @@ function MatchConfig({
             onClick={() => update({ matchField: '__custom__' })}
             className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
               state.matchField === '__custom__'
-                ? 'border-[#28258b] bg-[#28258b] text-white'
+                ? 'border-[#1e3a8a] bg-[#1e3a8a] text-white'
                 : 'border-dashed border-slate-300 text-slate-500 hover:border-slate-400'
             }`}
           >
@@ -469,7 +469,7 @@ function MatchConfig({
             value={state.matchCustomField}
             onChange={e => update({ matchCustomField: e.target.value })}
             placeholder="Type the field name exactly as it appears in your data"
-            className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+            className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
           />
         )}
         {effectiveField && (
@@ -499,7 +499,7 @@ function MatchConfig({
               key={opt.value}
               className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
                 state.matchStyle === opt.value
-                  ? 'border-[#28258b] bg-[#28258b]/5'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a]/5'
                   : 'border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -533,7 +533,7 @@ function MatchConfig({
                 key={opt.value}
                 className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
                   state.matchThreshold === opt.value
-                    ? 'border-[#28258b] bg-[#28258b]/5 font-semibold text-[#28258b]'
+                    ? 'border-[#1e3a8a] bg-[#1e3a8a]/5 font-semibold text-[#1e3a8a]'
                     : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -570,7 +570,7 @@ function MatchConfig({
               key={opt.value}
               className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
                 state.matchConflict === opt.value
-                  ? 'border-[#28258b] bg-[#28258b]/5'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a]/5'
                   : 'border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -614,7 +614,7 @@ function FilterConfig({
               key={opt.value}
               className={`flex flex-1 cursor-pointer items-start gap-2 rounded-lg border p-3 transition-colors ${
                 state.filterAction === opt.value
-                  ? 'border-[#28258b] bg-[#28258b]/5'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a]/5'
                   : 'border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -644,7 +644,7 @@ function FilterConfig({
               onClick={() => update({ filterField: f.value })}
               className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
                 state.filterField === f.value
-                  ? 'border-[#28258b] bg-[#28258b] text-white'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a] text-white'
                   : 'border-slate-300 text-slate-700 hover:border-slate-400 hover:bg-slate-50'
               }`}
             >
@@ -660,7 +660,7 @@ function FilterConfig({
           <select
             value={state.filterOperator}
             onChange={e => update({ filterOperator: e.target.value })}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none"
           >
             <option value="equals">is exactly</option>
             <option value="not_equals">is not</option>
@@ -673,7 +673,7 @@ function FilterConfig({
             value={state.filterValue}
             onChange={e => update({ filterValue: e.target.value })}
             placeholder="Value…"
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
           />
         </div>
         {state.filterField && state.filterValue && (
@@ -706,7 +706,7 @@ function TransformConfig({
               onClick={() => update({ transformField: f.value })}
               className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
                 state.transformField === f.value
-                  ? 'border-[#28258b] bg-[#28258b] text-white'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a] text-white'
                   : 'border-slate-300 text-slate-700 hover:border-slate-400 hover:bg-slate-50'
               }`}
             >
@@ -729,7 +729,7 @@ function TransformConfig({
               key={opt.value}
               className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
                 state.transformOperation === opt.value
-                  ? 'border-[#28258b] bg-[#28258b]/5'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a]/5'
                   : 'border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -771,7 +771,7 @@ function CombineConfig({
               onClick={() => update({ combineField: f.value })}
               className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
                 state.combineField === f.value
-                  ? 'border-[#28258b] bg-[#28258b] text-white'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a] text-white'
                   : 'border-slate-300 text-slate-700 hover:border-slate-400 hover:bg-slate-50'
               }`}
             >
@@ -793,7 +793,7 @@ function CombineConfig({
               key={opt.value}
               className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
                 state.combineOperation === opt.value
-                  ? 'border-[#28258b] bg-[#28258b]/5'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a]/5'
                   : 'border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -857,7 +857,7 @@ function OtherConfig({
             type="button"
             onClick={handleSuggest}
             disabled={loading}
-            className="flex items-center gap-2 rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-[#1e3a8a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
           >
             {loading ? (
               <>
@@ -879,14 +879,14 @@ function OtherConfig({
       )}
 
       {hasSuggestion && (
-        <div className="rounded-lg border border-[#28258b]/20 bg-[#28258b]/5 p-4 space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#28258b]">
+        <div className="rounded-lg border border-[#1e3a8a]/20 bg-[#1e3a8a]/5 p-4 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#1e3a8a]">
             AI suggested {state.suggestedSteps!.length} step{state.suggestedSteps!.length !== 1 ? 's' : ''}
           </p>
           <div className="space-y-1.5">
             {state.suggestedSteps!.map((step, i) => (
               <div key={step.id} className="flex items-start gap-2 text-xs text-slate-700">
-                <span className="mt-0.5 shrink-0 rounded-full bg-[#28258b] px-1.5 py-0.5 text-[10px] font-bold text-white">{i + 1}</span>
+                <span className="mt-0.5 shrink-0 rounded-full bg-[#1e3a8a] px-1.5 py-0.5 text-[10px] font-bold text-white">{i + 1}</span>
                 <span>
                   <span className="font-semibold">{step.type}</span>
                   {Object.keys(step.config).length > 0 && (
@@ -980,13 +980,13 @@ function TableauCopyConfig({
               setValidationResult(null);
             }}
             placeholder="https://dub01.online.tableau.com/#/site/logivice/views/WorkbookName/ViewName"
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
           />
           <button
             type="button"
             onClick={handleValidate}
             disabled={!state.tableauUrl.trim() || validating}
-            className="rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-40"
+            className="rounded-lg bg-[#1e3a8a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-40"
           >
             {validating ? 'Checking…' : 'Validate'}
           </button>
@@ -1047,7 +1047,7 @@ function TableauCopyConfig({
               key={opt.value}
               className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
                 state.tableauMode === opt.value
-                  ? 'border-[#28258b] bg-[#28258b]/5'
+                  ? 'border-[#1e3a8a] bg-[#1e3a8a]/5'
                   : 'border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -1076,7 +1076,7 @@ function TableauCopyConfig({
             value={state.tableauTargetSheet}
             onChange={e => update({ tableauTargetSheet: e.target.value })}
             placeholder={state.tableauViewName || 'Tableau Data'}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
           />
           <p className="mt-1 text-xs text-slate-500">
             A new sheet with this name is added to the generated Excel file.
@@ -1094,7 +1094,7 @@ function TableauCopyConfig({
               value={state.tableauTargetSheet}
               onChange={e => update({ tableauTargetSheet: e.target.value })}
               placeholder="e.g., Total"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
             />
             <p className="mt-1 text-xs text-slate-500">
               Must match the sheet name in the uploaded Excel template exactly.
@@ -1111,7 +1111,7 @@ function TableauCopyConfig({
               className={`mt-1 w-40 rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 ${
                 startCellInvalid
                   ? 'border-red-300 focus:border-red-400 focus:ring-red-200'
-                  : 'border-slate-300 focus:border-[#28258b] focus:ring-[#28258b]/20'
+                  : 'border-slate-300 focus:border-[#1e3a8a] focus:ring-[#1e3a8a]/20'
               }`}
             />
             {startCellInvalid && (
@@ -1132,7 +1132,7 @@ function TableauCopyConfig({
               id="tableauIncludeHeaders"
               checked={state.tableauIncludeHeaders}
               onChange={e => update({ tableauIncludeHeaders: e.target.checked })}
-              className="h-4 w-4 rounded border-slate-300 accent-[#28258b]"
+              className="h-4 w-4 rounded border-slate-300 accent-[#1e3a8a]"
             />
             <label htmlFor="tableauIncludeHeaders" className="text-sm text-slate-700">
               Include column headers as the first written row
@@ -1198,7 +1198,7 @@ function ReviewStep({
               href={state.referenceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-1 block truncate text-[#28258b] underline hover:text-[#1f1d70]"
+              className="mt-1 block truncate text-[#1e3a8a] underline hover:text-[#1f1d70]"
             >
               {state.referenceUrl}
             </a>

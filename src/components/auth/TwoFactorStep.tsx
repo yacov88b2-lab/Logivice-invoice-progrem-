@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+﻿import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 
 interface Props {
@@ -33,7 +33,7 @@ export function TwoFactorStep({ preToken, onBack }: Props) {
   return (
     <div
       className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: 'linear-gradient(135deg, #28258b 0%, #5b21b6 60%, #7c3aed 100%)' }}
+      style={{ background: 'linear-gradient(135deg, #0c1d4e 0%, #1e3a8a 60%, #1d62a8 100%)' }}
     >
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
@@ -60,7 +60,7 @@ export function TwoFactorStep({ preToken, onBack }: Props) {
                 maxLength={10}
                 required
                 autoComplete="one-time-code"
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-center tracking-widest font-mono focus:border-[#28258b] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#28258b]/20 transition"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-center tracking-widest font-mono focus:border-[#1e3a8a] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20 transition"
               />
             </div>
 
@@ -72,7 +72,7 @@ export function TwoFactorStep({ preToken, onBack }: Props) {
               type="submit"
               disabled={loading || code.length < 6}
               className="w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-md active:scale-[0.99]"
-              style={{ background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' }}
+              style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' }}
             >
               {loading ? 'Verifying…' : 'Verify'}
             </button>

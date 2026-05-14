@@ -379,7 +379,7 @@ router.post('/invoice', async (req, res) => {
       force = false,
       force_review = false
     } = req.body;
-    const user_id = parseInt((req as AuthenticatedRequest).user.sub) || 1;
+    const user_id = (req as AuthenticatedRequest).user.sub;
 
     if (!pricelist_id || !start_date || !end_date) {
       return res.status(400).json({ 
@@ -646,7 +646,7 @@ router.post('/invoice', async (req, res) => {
     // Log audit entry
     const auditEntry = AuditLogModel.create({
       pricelist_id: parseInt(pricelist_id),
-      user_id: parseInt(user_id),
+      user_id,
       date_range_start: start_date,
       date_range_end: end_date,
       api_data_summary: JSON.stringify({
@@ -994,10 +994,255 @@ router.post('/preview', async (req, res) => {
   }
 });
 
+// ─── Region preview (dry run across all warehouses for a customer) ─────────────
+router.post('/region-preview', async (req, res) => {
+  try {
+    const { customer_name: raw_customer_name, start_date, end_date } = req.body;
+    const customer_name = typeof raw_customer_name === 'string' ? raw_customer_name.trim() : '';
+    if (!customer_name || !start_date || !end_date) {
+      return res.status(400).json({ error: 'Missing required fields: customer_name, start_date, end_date' });
+    }
+
+    const pricelists = PricelistModel.getByCustomerName(customer_name);
+    if (pricelists.length === 0) {
+      return res.status(404).json({ error: `No pricelists found for customer: ${customer_name}` });
+    }
+
+    let totalTransactions = 0;
+    let totalMatched = 0;
+    let totalUnmatched = 0;
+    const warehouseBreakdown: Array<{
+      warehouse: string;
+      pricelistName: string;
+      matched: number;
+      unmatched: number;
+      total: number;
+      error?: string;
+    }> = [];
+
+    for (const pricelist of pricelists) {
+      try {
+        const fileExists = await pricelistStorage.fileExists(pricelist.file_path);
+        if (!fileExists) {
+          warehouseBreakdown.push({ warehouse: pricelist.warehouse_code, pricelistName: pricelist.name, matched: 0, unmatched: 0, total: 0, error: 'Pricelist file not found' });
+          continue;
+        }
+
+        const pricelistBuffer = await pricelistStorage.retrieveFile(pricelist.file_path);
+        let transactions = ExcelDataExtractor.extractFromAnalyzeSheet(pricelistBuffer);
+
+        if (transactions.length === 0) {
+          const tableauClient = new TableauAPIClient();
+          transactions = await tableauClient.fetchTransactions(start_date, end_date, pricelist.customer_name, pricelist.warehouse_code);
+        } else {
+          transactions = transactions.map(t => ({ ...t, customer: pricelist.customer_name, warehouse: pricelist.warehouse_code }));
+        }
+
+        if (transactions.length === 0) {
+          warehouseBreakdown.push({ warehouse: pricelist.warehouse_code, pricelistName: pricelist.name, matched: 0, unmatched: 0, total: 0 });
+          continue;
+        }
+
+        const primaryRule = CustomerRuleModel.getActiveMatchingByCustomer(pricelist.customer_name);
+        let matched = 0;
+        let unmatched = 0;
+
+        if (primaryRule) {
+          const lineItems = getInvoiceLineItems(pricelist.template_structure);
+          const ruleUnmatched: any[] = [];
+          for (const transaction of transactions) {
+            try {
+              const result = await RuleEngine.evaluateRule(primaryRule, { transaction, lineItems, templateStructure: pricelist.template_structure, previousResults: {} });
+              if (result.success && result.data.matchedLineItem) matched++;
+              else ruleUnmatched.push(transaction);
+            } catch { ruleUnmatched.push(transaction); }
+          }
+          // DataMapper fallback for what the rule missed
+          const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(ruleUnmatched, pricelist.template_structure, pricelistBuffer);
+          matched += dmMatches.length;
+          unmatched = dmUnmatched.length;
+        } else {
+          const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(transactions, pricelist.template_structure, pricelistBuffer);
+          matched = dmMatches.length;
+          unmatched = dmUnmatched.length;
+        }
+
+        warehouseBreakdown.push({ warehouse: pricelist.warehouse_code, pricelistName: pricelist.name, matched, unmatched, total: transactions.length });
+        totalTransactions += transactions.length;
+        totalMatched += matched;
+        totalUnmatched += unmatched;
+      } catch (err) {
+        warehouseBreakdown.push({ warehouse: pricelist.warehouse_code, pricelistName: pricelist.name, matched: 0, unmatched: 0, total: 0, error: (err as Error).message });
+      }
+    }
+
+    res.json({
+      customerName: customer_name,
+      pricelistCount: pricelists.length,
+      summary: { totalTransactions, matched: totalMatched, unmatched: totalUnmatched },
+      warehouseBreakdown
+    });
+  } catch (error) {
+    console.error('Error in region preview:', error);
+    res.status(500).json({ error: 'Failed to preview region mapping', details: (error as Error).message });
+  }
+});
+
+// ─── Region invoice (generate + merge all warehouses for a customer) ──────────
+router.post('/region-invoice', async (req, res) => {
+  try {
+    const { customer_name: raw_customer_name, start_date, end_date, force = false } = req.body;
+    const customer_name = typeof raw_customer_name === 'string' ? raw_customer_name.trim() : '';
+    if (!customer_name || !start_date || !end_date) {
+      return res.status(400).json({ error: 'Missing required fields: customer_name, start_date, end_date' });
+    }
+
+    const user_id = (req as AuthenticatedRequest).user.sub;
+    const pricelists = PricelistModel.getByCustomerName(customer_name);
+    if (pricelists.length === 0) {
+      return res.status(404).json({ error: `No pricelists found for customer: ${customer_name}` });
+    }
+
+    const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(process.cwd(), 'data');
+    const outputDir = path.join(dataDir, 'uploads', 'generated');
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+    const masterWb = XLSX.utils.book_new();
+    const tempFiles: string[] = [];
+    let totalTransactions = 0;
+    let totalMatched = 0;
+    let totalUnmatched = 0;
+    let totalFilledRows = 0;
+    const allErrors: string[] = [];
+    const warehouseBreakdown: Array<{ warehouse: string; pricelistName: string; matched: number; unmatched: number; total: number; filledRows: number; error?: string }> = [];
+
+    for (const pricelist of pricelists) {
+      try {
+        const fileExists = await pricelistStorage.fileExists(pricelist.file_path);
+        if (!fileExists) {
+          warehouseBreakdown.push({ warehouse: pricelist.warehouse_code, pricelistName: pricelist.name, matched: 0, unmatched: 0, total: 0, filledRows: 0, error: 'File not found' });
+          continue;
+        }
+
+        const pricelistBuffer = await pricelistStorage.retrieveFile(pricelist.file_path);
+        const { transactions, rawViewData, filteredViewData } = await loadBillingTransactions(pricelist, pricelistBuffer, start_date, end_date);
+
+        if (transactions.length === 0) {
+          warehouseBreakdown.push({ warehouse: pricelist.warehouse_code, pricelistName: pricelist.name, matched: 0, unmatched: 0, total: 0, filledRows: 0 });
+          continue;
+        }
+
+        const primaryRule = CustomerRuleModel.getActiveMatchingByCustomer(pricelist.customer_name);
+        let matches: any[] = [];
+        let unmatched: any[] = [];
+
+        if (primaryRule) {
+          const lineItems = getInvoiceLineItems(pricelist.template_structure);
+          const ruleMatches: any[] = [];
+          const ruleUnmatched: any[] = [];
+          for (const transaction of transactions) {
+            try {
+              const result = await RuleEngine.evaluateRule(primaryRule, { transaction, lineItems, templateStructure: pricelist.template_structure, previousResults: {} });
+              if (result.success && result.data.matchedLineItem) {
+                ruleMatches.push({ lineItem: result.data.matchedLineItem, transaction, sheetName: result.data.matchedLineItem.sheetName || '', confidence: result.data.matches?.[0]?.confidence ?? 0.9, matchReason: `Rule match: ${primaryRule.name}` });
+              } else { ruleUnmatched.push(transaction); }
+            } catch { ruleUnmatched.push(transaction); }
+          }
+          const { matches: dmMatches, unmatched: dmUnmatched } = DataMapper.mapTransactions(ruleUnmatched, pricelist.template_structure, pricelistBuffer);
+          matches = [...ruleMatches, ...dmMatches];
+          unmatched = dmUnmatched;
+        } else {
+          const result = DataMapper.mapTransactions(transactions, pricelist.template_structure, pricelistBuffer);
+          matches = result.matches;
+          unmatched = result.unmatched;
+        }
+
+        const aggregated = DataMapper.aggregateQuantities(matches);
+        const quantityMap = new Map<string, number>();
+        aggregated.forEach((value, key) => quantityMap.set(key, value.qty));
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const tempPath = path.join(outputDir, `region_temp_${pricelist.warehouse_code}_${timestamp}.xlsx`);
+        tempFiles.push(tempPath);
+
+        const fillResult = await fillInvoice(pricelistBuffer, pricelist.template_structure, quantityMap, tempPath, pricelist.customer_name, transactions, rawViewData, filteredViewData, null);
+
+        // Copy sheets into master workbook, prefixing with pricelist name to stay unique
+        if (fs.existsSync(tempPath)) {
+          const warehouseWb = XLSX.readFile(tempPath);
+          const usedNames = new Set(masterWb.SheetNames);
+          for (const sheetName of warehouseWb.SheetNames) {
+            let newName = `${pricelist.warehouse_code} - ${sheetName}`.substring(0, 31);
+            // Deduplicate if same warehouse_code appears multiple times
+            let suffix = 2;
+            while (usedNames.has(newName)) {
+              newName = `${pricelist.warehouse_code}(${suffix}) - ${sheetName}`.substring(0, 31);
+              suffix++;
+            }
+            usedNames.add(newName);
+            XLSX.utils.book_append_sheet(masterWb, warehouseWb.Sheets[sheetName], newName);
+          }
+        }
+
+        warehouseBreakdown.push({ warehouse: pricelist.warehouse_code, pricelistName: pricelist.name, matched: matches.length, unmatched: unmatched.length, total: transactions.length, filledRows: fillResult.filledRows.length });
+        totalTransactions += transactions.length;
+        totalMatched += matches.length;
+        totalUnmatched += unmatched.length;
+        totalFilledRows += fillResult.filledRows.length;
+        allErrors.push(...fillResult.errors);
+      } catch (err) {
+        const msg = (err as Error).message;
+        console.error(`[Region invoice] Error processing warehouse ${pricelist.warehouse_code} (${pricelist.name}):`, err);
+        warehouseBreakdown.push({ warehouse: pricelist.warehouse_code, pricelistName: pricelist.name, matched: 0, unmatched: 0, total: 0, filledRows: 0, error: msg });
+        allErrors.push(`${pricelist.warehouse_code}: ${msg}`);
+      }
+    }
+
+    if (masterWb.SheetNames.length === 0) {
+      const detail = allErrors.length > 0 ? allErrors.join('; ') : 'No data found for the given date range';
+      return res.status(422).json({ error: `No output generated for any warehouse. ${detail}`, warehouseBreakdown });
+    }
+
+    // Save combined workbook
+    const masterTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeCustomerName = customer_name.replace(/[^a-zA-Z0-9 _-]/g, '_');
+    const masterPath = path.join(outputDir, `${safeCustomerName}_REGION_${masterTimestamp}.xlsx`);
+    XLSX.writeFile(masterWb, masterPath);
+
+    // Clean up temp files
+    for (const t of tempFiles) { try { fs.unlinkSync(t); } catch {} }
+
+    // Single audit log entry for the region invoice
+    const auditEntry = AuditLogModel.create({
+      pricelist_id: pricelists[0].id,
+      user_id,
+      date_range_start: start_date,
+      date_range_end: end_date,
+      api_data_summary: JSON.stringify({ region: customer_name, pricelistCount: pricelists.length, totalTransactions, totalMatched, totalUnmatched, warehouseBreakdown }),
+      filled_rows: JSON.stringify({ totalFilledRows }),
+      output_file_path: masterPath
+    });
+
+    res.json({
+      success: true,
+      customerName: customer_name,
+      summary: { totalTransactions, matched: totalMatched, unmatched: totalUnmatched, filledRows: totalFilledRows },
+      warehouseBreakdown,
+      errors: allErrors,
+      auditLogId: auditEntry.id,
+      downloadUrl: `/api/generate/download/${auditEntry.id}`
+    });
+  } catch (error) {
+    console.error('Error generating region invoice:', error);
+    res.status(500).json({ error: 'Failed to generate region invoice', details: (error as Error).message });
+  }
+});
+
 // Download generated file
 router.get('/download/:auditId', (req, res) => {
   try {
     const auditId = parseInt(req.params.auditId);
+    if (isNaN(auditId)) return res.status(400).json({ error: 'Invalid audit ID' });
     const auditEntry = AuditLogModel.getById(auditId);
     
     if (!auditEntry || !auditEntry.output_file_path) {

@@ -202,6 +202,7 @@ export function createAfimilkRuleDefinition(): CustomerRuleDefinition {
     description: 'Default rule for Afimilk NZ: extracts storage billing period, patches inbound/outbound/storage sheets with Tableau data, renames sheets by period',
     version: 1,
     enabled: false,
+    approval_status: 'draft' as const,
     ruleType: 'transformation',
     steps,
     created_at: new Date().toISOString(),

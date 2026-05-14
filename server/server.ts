@@ -33,7 +33,10 @@ app.set('etag', false);
 
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false })); // CSP handled by Vite in dev
-app.use(cors());
+app.use(cors({
+  origin: process.env.APP_URL || 'http://localhost:5173',
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

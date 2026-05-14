@@ -11,9 +11,10 @@ export default {
       },
       colors: {
         brand: {
-          dark: '#28258b',
-          DEFAULT: '#4f46e5',
-          light: '#7c3aed',
+          dark: '#1e3a8a',
+          DEFAULT: '#0369a1',
+          light: '#0284c7',
+          green: '#58a967',
         },
       },
     },

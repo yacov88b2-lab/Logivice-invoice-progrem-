@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { api } from '../../api';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -57,7 +57,7 @@ export function InviteAcceptPage({ token }: { token: string }) {
   return (
     <div
       className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: 'linear-gradient(135deg, #28258b 0%, #5b21b6 60%, #7c3aed 100%)' }}
+      style={{ background: 'linear-gradient(135deg, #0c1d4e 0%, #1e3a8a 60%, #1d62a8 100%)' }}
     >
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
@@ -71,7 +71,7 @@ export function InviteAcceptPage({ token }: { token: string }) {
           {!token || loadError ? (
             <div className="text-center space-y-3">
               <div className="text-red-600 text-sm">{loadError || 'Invalid invite link.'}</div>
-              <a href="/" className="text-sm text-[#28258b] hover:underline">Back to login</a>
+              <a href="/" className="text-sm text-[#1e3a8a] hover:underline">Back to login</a>
             </div>
           ) : !info ? (
             <div className="text-center text-sm text-slate-500">Validating invite…</div>
@@ -113,7 +113,7 @@ export function InviteAcceptPage({ token }: { token: string }) {
                     onChange={e => setPassword(e.target.value)}
                     required
                     autoComplete="new-password"
-                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none"
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none"
                   />
                 </div>
                 <div>
@@ -124,7 +124,7 @@ export function InviteAcceptPage({ token }: { token: string }) {
                     onChange={e => setConfirm(e.target.value)}
                     required
                     autoComplete="new-password"
-                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none"
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none"
                   />
                 </div>
 
@@ -134,7 +134,7 @@ export function InviteAcceptPage({ token }: { token: string }) {
                   type="submit"
                   disabled={submitting}
                   className="w-full rounded-lg px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-md"
-                  style={{ background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' }}
+                  style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' }}
                 >
                   {submitting ? 'Creating account…' : 'Create account'}
                 </button>

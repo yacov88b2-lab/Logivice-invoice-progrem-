@@ -332,6 +332,7 @@ export function createSensosRuleDefinition(): CustomerRuleDefinition {
     description: 'Default rule for Sensos: calculates 8 synthetic quantities from Tableau views, applies storage SqM logic with minimum charge, maps to line items by segment+clause+category',
     version: 1,
     enabled: false,
+    approval_status: 'draft' as const,
     ruleType: 'aggregation',
     steps,
     created_at: new Date().toISOString(),

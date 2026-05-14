@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import { RuleWizard } from './RuleWizard';
 import type { CustomerRuleDefinition } from './RuleBuilder';
@@ -32,21 +32,21 @@ const STAGE_ORDER: LifecycleStage[] = ['draft', 'tested', 'approved', 'active'];
 const STAGE_COLORS: Record<LifecycleStage, string> = {
   draft:    'bg-slate-400',
   tested:   'bg-amber-400',
-  approved: 'bg-[#28258b]',
+  approved: 'bg-[#1e3a8a]',
   active:   'bg-[#58a967]',
 };
 
 const STAGE_TEXT: Record<LifecycleStage, string> = {
   draft:    'text-slate-600',
   tested:   'text-amber-700',
-  approved: 'text-[#28258b]',
+  approved: 'text-[#1e3a8a]',
   active:   'text-[#28753a]',
 };
 
 const STAGE_BG: Record<LifecycleStage, string> = {
   draft:    'bg-slate-100',
   tested:   'bg-amber-100',
-  approved: 'bg-[#28258b]/10',
+  approved: 'bg-[#1e3a8a]/10',
   active:   'bg-[#e9f6ec]',
 };
 
@@ -292,11 +292,11 @@ export function CustomerRules() {
             {showTestData ? 'Hide test data' : 'Show test data'}
           </button>
           <button type="button" onClick={() => setMode('assistant')}
-            className="rounded border border-[#28258b]/30 bg-[#28258b]/10 px-4 py-2 text-sm font-semibold text-[#28258b] hover:bg-[#28258b]/15">
+            className="rounded border border-[#1e3a8a]/30 bg-[#1e3a8a]/10 px-4 py-2 text-sm font-semibold text-[#1e3a8a] hover:bg-[#1e3a8a]/15">
             AI Assistant
           </button>
           <button type="button" onClick={startNewRule}
-            className="rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
+            className="rounded-lg bg-[#1e3a8a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
             New Rule
           </button>
         </div>
@@ -310,7 +310,7 @@ export function CustomerRules() {
             <span className={`font-semibold ${
               label === 'Draft'    ? 'text-slate-500' :
               label === 'Tested'  ? 'text-amber-600' :
-              label === 'Approved'? 'text-[#28258b]' :
+              label === 'Approved'? 'text-[#1e3a8a]' :
                                     'text-[#28753a]'
             }`}>{label}</span>
             {i < arr.length - 1 && <span className="text-slate-300">→</span>}
@@ -330,7 +330,7 @@ export function CustomerRules() {
             <select
               value={selectedCustomer}
               onChange={e => setSelectedCustomer(e.target.value)}
-              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
             >
               {customers.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -352,7 +352,7 @@ export function CustomerRules() {
           <div className="p-8 text-center">
             <div className="text-base font-semibold text-slate-800">No rules for this customer yet</div>
             <button type="button" onClick={startNewRule}
-              className="mt-4 rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
+              className="mt-4 rounded-lg bg-[#1e3a8a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]">
               Create First Rule
             </button>
           </div>
@@ -396,20 +396,20 @@ export function CustomerRules() {
                       <button type="button"
                         onClick={() => handleCreateCopy(rule)}
                         title="Active rules cannot be edited in place. Creates a new draft copy you can safely change."
-                        className="rounded-lg bg-[#28258b]/10 px-3 py-1.5 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15">
+                        className="rounded-lg bg-[#1e3a8a]/10 px-3 py-1.5 text-xs font-semibold text-[#1e3a8a] hover:bg-[#1e3a8a]/15">
                         Create Draft Copy
                       </button>
                     ) : (stage === 'tested' || stage === 'approved') ? (
                       <button type="button"
                         onClick={() => handleEditWithWarning(rule)}
                         title="Changing steps or logic will reset this rule to Draft"
-                        className="rounded-lg bg-[#28258b]/10 px-3 py-1.5 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15">
+                        className="rounded-lg bg-[#1e3a8a]/10 px-3 py-1.5 text-xs font-semibold text-[#1e3a8a] hover:bg-[#1e3a8a]/15">
                         Edit
                       </button>
                     ) : (
                       <button type="button"
                         onClick={() => { setSelectedRule(rule); setMode('edit'); }}
-                        className="rounded-lg bg-[#28258b]/10 px-3 py-1.5 text-xs font-semibold text-[#28258b] hover:bg-[#28258b]/15">
+                        className="rounded-lg bg-[#1e3a8a]/10 px-3 py-1.5 text-xs font-semibold text-[#1e3a8a] hover:bg-[#1e3a8a]/15">
                         Edit
                       </button>
                     )}
@@ -441,7 +441,7 @@ export function CustomerRules() {
                     {stage === 'approved' && (
                       <button type="button"
                         onClick={() => handleToggle(rule)}
-                        className="rounded-lg bg-[#28258b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]">
+                        className="rounded-lg bg-[#1e3a8a] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1f1d70]">
                         Enable
                       </button>
                     )}

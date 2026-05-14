@@ -18,7 +18,11 @@ router.post('/2fa/setup', (req, res) => {
   const { sub, email } = (req as AuthenticatedRequest).user;
 
   const secret = generateSecret();
-  const otpAuthUrl = generateURI({ type: 'totp', label: email, params: { secret, issuer: 'Logivice' } });
+  const otpAuthUrl = generateURI({
+    label: email,
+    secret,
+    issuer: 'Logivice'
+  });
 
   // Store pending secret (not yet confirmed)
   db.prepare('UPDATE users SET two_factor_secret = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(secret, sub);

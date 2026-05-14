@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { PricelistList } from './PricelistList';
 import { PricelistUpload } from './PricelistUpload';
 import type { Pricelist } from '../../types';
@@ -166,7 +166,7 @@ export function PricelistManager() {
           )}
           <button
             onClick={() => setShowUpload(true)}
-            className="rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#1f1d70]"
+            className="rounded-lg bg-[#1e3a8a] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#1f1d70]"
           >
             Upload Pricelist
           </button>

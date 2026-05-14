@@ -5,7 +5,7 @@ import { TableauAPIClient } from '../../services/tableauAPI';
 import { parseTableauViewUrl } from '../../rules/_base';
 import { validateAssistantSteps } from '../../services/stepValidator';
 import db from '../../db';
-import { requireAuth, type AuthenticatedRequest } from '../../middleware/auth';
+import { requireAuth, requireMinRole, type AuthenticatedRequest } from '../../middleware/auth';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -78,9 +78,11 @@ router.post('/', (req, res) => {
       description,
       version: 1,
       enabled: false,
+      approval_status: 'draft',
       ruleType,
       steps: steps || [],
-      created_by: actor
+      created_by: actor,
+      updated_by: actor
     });
 
     res.status(201).json(rule);
@@ -144,7 +146,7 @@ router.put('/:id', (req, res) => {
 });
 
 // Enable/disable rule
-router.patch('/:id/toggle', (req, res) => {
+router.patch('/:id/toggle', requireMinRole('admin'), (req, res) => {
   try {
     const { enabled } = req.body;
     const actor = (req as AuthenticatedRequest).user.email;
@@ -252,7 +254,7 @@ router.post('/:id/test', async (req, res) => {
 });
 
 // Mark rule as tested
-router.patch('/:id/mark-tested', (req, res) => {
+router.patch('/:id/mark-tested', requireMinRole('admin'), (req, res) => {
   try {
     const actor = (req as AuthenticatedRequest).user.email;
     const rule = CustomerRuleModel.getById(req.params.id);
@@ -270,7 +272,7 @@ router.patch('/:id/mark-tested', (req, res) => {
 });
 
 // Mark rule as approved (unlock for enabling)
-router.patch('/:id/approve', (req, res) => {
+router.patch('/:id/approve', requireMinRole('admin'), (req, res) => {
   try {
     const actor = (req as AuthenticatedRequest).user.email;
     const rule = CustomerRuleModel.getById(req.params.id);
@@ -570,7 +572,7 @@ router.post('/:id/create-version', (req, res) => {
 });
 
 // Delete rule
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requireMinRole('admin'), (req, res) => {
   try {
     const rule = CustomerRuleModel.getById(req.params.id);
 

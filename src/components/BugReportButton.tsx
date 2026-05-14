@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import { toast } from '../toast';
 
@@ -141,7 +141,7 @@ export function BugReportButton() {
                 <p className="text-sm text-slate-600">Your report has been logged and will be reviewed.</p>
                 <button
                   onClick={handleClose}
-                  className="mt-5 rounded-lg bg-[#28258b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
+                  className="mt-5 rounded-lg bg-[#1e3a8a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1d70]"
                 >
                   Close
                 </button>
@@ -155,7 +155,7 @@ export function BugReportButton() {
                     value={form.title}
                     onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                     placeholder="Short summary of the issue"
-                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
                   />
                 </div>
 
@@ -166,7 +166,7 @@ export function BugReportButton() {
                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                     placeholder="What happened? What did you expect?"
                     rows={4}
-                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
                   />
                 </div>
 
@@ -176,7 +176,7 @@ export function BugReportButton() {
                     <select
                       value={form.severity}
                       onChange={e => setForm(f => ({ ...f, severity: e.target.value }))}
-                      className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none"
+                      className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none"
                     >
                       <option value="low">Low</option>
                       <option value="medium">Medium</option>
@@ -191,7 +191,7 @@ export function BugReportButton() {
                       value={form.reported_by}
                       onChange={e => setForm(f => ({ ...f, reported_by: e.target.value }))}
                       placeholder="Optional"
-                      className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none"
+                      className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none"
                     />
                   </div>
                 </div>

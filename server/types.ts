@@ -88,7 +88,7 @@ export interface UnmatchedItem {
 export interface AuditEntry {
   id?: number;
   pricelist_id: number;
-  user_id: number;
+  user_id: string;
   date_range_start: string;
   date_range_end: string;
   api_data_summary: string;

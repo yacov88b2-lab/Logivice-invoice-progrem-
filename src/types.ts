@@ -176,6 +176,42 @@ export interface PreviewResponse {
   }>;
 }
 
+export interface WarehouseBreakdownItem {
+  warehouse: string;
+  pricelistName: string;
+  matched: number;
+  unmatched: number;
+  total: number;
+  filledRows?: number;
+  error?: string;
+}
+
+export interface RegionPreviewResponse {
+  customerName: string;
+  pricelistCount: number;
+  summary: {
+    totalTransactions: number;
+    matched: number;
+    unmatched: number;
+  };
+  warehouseBreakdown: WarehouseBreakdownItem[];
+}
+
+export interface RegionGenerateResponse {
+  success: boolean;
+  customerName: string;
+  summary: {
+    totalTransactions: number;
+    matched: number;
+    unmatched: number;
+    filledRows: number;
+  };
+  warehouseBreakdown: WarehouseBreakdownItem[];
+  errors: string[];
+  auditLogId: number;
+  downloadUrl: string;
+}
+
 export interface TableauCopyResult {
   stepId: string;
   sheetName: string;

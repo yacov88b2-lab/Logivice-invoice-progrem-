@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { api } from '../../api';
 import type { CustomerRuleDefinition } from './RuleBuilder';
 import { toast } from '../../toast';
@@ -169,7 +169,7 @@ function TableauCopyTestPanel({ rule, onMarkedTested }: RuleTestProps) {
       <div className="rounded-2xl bg-white p-5 shadow-md space-y-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tableau view URL</p>
-          <p className="mt-1 break-all font-mono text-sm text-[#28258b]">{url || '(none set)'}</p>
+          <p className="mt-1 break-all font-mono text-sm text-[#1e3a8a]">{url || '(none set)'}</p>
         </div>
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500">
           <span>
@@ -210,7 +210,7 @@ function TableauCopyTestPanel({ rule, onMarkedTested }: RuleTestProps) {
         type="button"
         onClick={runCheck}
         disabled={loading || !url}
-        className="rounded-lg bg-[#28258b] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
+        className="rounded-lg bg-[#1e3a8a] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
       >
         {loading ? 'Checking Tableau…' : 'Validate URL & fetch sample data'}
       </button>
@@ -280,7 +280,7 @@ function TableauCopyTestPanel({ rule, onMarkedTested }: RuleTestProps) {
           )}
 
           {canMarkTested && (
-            <div className="rounded-xl border border-[#28258b]/20 bg-[#28258b]/5 p-4">
+            <div className="rounded-xl border border-[#1e3a8a]/20 bg-[#1e3a8a]/5 p-4">
               <p className="text-sm font-semibold text-slate-800">Ready to mark as tested?</p>
               <p className="mt-0.5 text-xs text-slate-500">
                 URL is valid and view was found. Marking tested unlocks the Approve action.
@@ -413,7 +413,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
                 value={tx[key]}
                 onChange={e => updateTx({ [key]: e.target.value })}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm
-                  focus:border-[#28258b] focus:outline-none focus:ring-1 focus:ring-[#28258b]/20"
+                  focus:border-[#1e3a8a] focus:outline-none focus:ring-1 focus:ring-[#1e3a8a]/20"
               />
             </div>
           ))}
@@ -453,7 +453,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
                   type="text"
                   value={li[key]}
                   onChange={e => updateLI(i, { [key]: e.target.value })}
-                  className="rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-[#28258b] focus:outline-none"
+                  className="rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-[#1e3a8a] focus:outline-none"
                 />
               ))}
               <div className="flex items-center gap-1">
@@ -461,7 +461,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
                   type="number"
                   value={li.rate}
                   onChange={e => updateLI(i, { rate: e.target.value })}
-                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-[#28258b] focus:outline-none"
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-[#1e3a8a] focus:outline-none"
                 />
                 {lineItems.length > 1 && (
                   <button
@@ -483,7 +483,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
         type="button"
         onClick={runTest}
         disabled={loading}
-        className="rounded-lg bg-[#28258b] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
+        className="rounded-lg bg-[#1e3a8a] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1f1d70] disabled:opacity-50"
       >
         {loading ? 'Running test…' : 'Run test'}
       </button>
@@ -555,7 +555,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {(result.executedSteps as string[]).map((s, i) => (
-                  <span key={i} className="rounded-full bg-[#28258b]/10 px-2.5 py-0.5 text-xs font-semibold text-[#28258b]">
+                  <span key={i} className="rounded-full bg-[#1e3a8a]/10 px-2.5 py-0.5 text-xs font-semibold text-[#1e3a8a]">
                     {s}
                   </span>
                 ))}
@@ -587,7 +587,7 @@ export function RuleTest({ rule, onMarkedTested }: RuleTestProps) {
 
           {/* Mark as Tested — only after a real successful run */}
           {canMarkTested && (
-            <div className="rounded-xl border border-[#28258b]/20 bg-[#28258b]/5 p-4">
+            <div className="rounded-xl border border-[#1e3a8a]/20 bg-[#1e3a8a]/5 p-4">
               <p className="text-sm font-semibold text-slate-800">Ready to mark as tested?</p>
               <p className="mt-0.5 text-xs text-slate-500">
                 This unlocks the Approve action. The rule still won't affect invoices until it's approved and enabled.

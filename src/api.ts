@@ -20,7 +20,10 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 const getErrorMessage = async (res: Response, fallback: string) => {
   try {
     const data = await res.json();
-    if (data?.error) return String(data.error);
+    if (data?.error) {
+      const detail = data.details ? `: ${data.details}` : '';
+      return String(data.error) + detail;
+    }
   } catch {
     // ignore
   }
@@ -357,6 +360,30 @@ export const api = {
     if (!data?.success) {
       throw new Error(String(data?.error || 'Failed to generate invoice'));
     }
+    return data;
+  },
+
+  previewRegionMapping: async (customerName: string, startDate: string, endDate: string) => {
+    const res = await fetch(`${API_BASE}/generate/region-preview`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ customer_name: customerName, start_date: startDate, end_date: endDate }),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to preview region mapping'));
+    return res.json();
+  },
+
+  generateRegionInvoice: async (customerName: string, startDate: string, endDate: string, force = false) => {
+    const res = await fetch(`${API_BASE}/generate/region-invoice`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ customer_name: customerName, start_date: startDate, end_date: endDate, force }),
+    });
+    if (handle401(res)) throw new Error('Session expired');
+    if (!res.ok) throw new Error(await getErrorMessage(res, 'Failed to generate region invoice'));
+    const data = await res.json();
+    if (!data?.success) throw new Error(String(data?.error || 'Failed to generate region invoice'));
     return data;
   },
 

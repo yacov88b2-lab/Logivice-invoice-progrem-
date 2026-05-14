@@ -11,6 +11,12 @@ export class PricelistModel {
     }));
   }
 
+  static getByCustomerName(customerName: string): Pricelist[] {
+    const stmt = db.prepare('SELECT * FROM pricelists WHERE customer_name = ? ORDER BY warehouse_code ASC');
+    const rows = stmt.all(customerName) as any[];
+    return rows.map(row => ({ ...row, template_structure: JSON.parse(row.template_structure) }));
+  }
+
   static getById(id: number): Pricelist | undefined {
     const stmt = db.prepare('SELECT * FROM pricelists WHERE id = ?');
     const row = stmt.get(id) as any;

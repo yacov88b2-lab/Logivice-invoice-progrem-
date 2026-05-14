@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PricelistManager } from './components/admin/PricelistManager';
 import { CustomerRules } from './components/admin/CustomerRules';
@@ -18,7 +18,7 @@ function AppShell() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f1f0f9] text-sm text-slate-500">
+      <div className="min-h-screen flex items-center justify-center bg-[#eef5ff] text-sm text-slate-500">
         Loading…
       </div>
     );
@@ -37,10 +37,10 @@ function AppShell() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f1f0f9] text-slate-900 font-sans">
+    <div className="min-h-screen bg-[#eef5ff] text-slate-900 font-sans">
       <header
         className="sticky top-0 z-40 shadow-lg"
-        style={{ background: 'linear-gradient(135deg, #28258b 0%, #5b21b6 60%, #7c3aed 100%)' }}
+        style={{ background: 'linear-gradient(135deg, #0c1d4e 0%, #1e3a8a 60%, #1d62a8 100%)' }}
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="flex items-center justify-between py-3">
@@ -77,7 +77,7 @@ function AppShell() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
                     activeTab === tab.id
-                      ? 'bg-white text-[#28258b] shadow-sm font-semibold'
+                      ? 'bg-white text-[#1e3a8a] shadow-sm font-semibold'
                       : 'text-white/70 hover:text-white hover:bg-white/10'
                   }`}
                 >

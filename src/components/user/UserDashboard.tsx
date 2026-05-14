@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
-import { api } from '../../api';
-import type { Pricelist, PreviewResponse, GenerateResponse, RuleDiagnostic, TableauCopyResult } from '../../types';
+﻿import { useState, useEffect, useMemo } from 'react';
+import { api, tokenStore } from '../../api';
+import type { Pricelist, PreviewResponse, GenerateResponse, RuleDiagnostic, TableauCopyResult, RegionPreviewResponse, RegionGenerateResponse } from '../../types';
 
 export function UserDashboard() {
   const [pricelists, setPricelists] = useState<Pricelist[]>([]);
@@ -18,6 +18,12 @@ export function UserDashboard() {
   const [billingCycle, setBillingCycle] = useState<'custom' | 'full_month'>('full_month');
   const [duplicateWarning, setDuplicateWarning] = useState<{ generatedAt: string; existingAuditLogId: number } | null>(null);
   const [confirmedDuplicate, setConfirmedDuplicate] = useState(false);
+
+  // Region mode state
+  const [mode, setMode] = useState<'warehouse' | 'region'>('warehouse');
+  const [regionCustomer, setRegionCustomer] = useState<string>('');
+  const [regionPreview, setRegionPreview] = useState<RegionPreviewResponse | null>(null);
+  const [regionResult, setRegionResult] = useState<RegionGenerateResponse | null>(null);
 
   const loadPricelists = async () => {
     setLoadingPricelists(true);
@@ -87,6 +93,17 @@ export function UserDashboard() {
     [pricelists, selectedPricelist]
   );
 
+  const regionWarehouses = useMemo(
+    () => regionCustomer
+      ? Array.from(new Set(
+          pricelists
+            .filter(p => p.customer_name === regionCustomer)
+            .map(p => p.warehouse_code)
+        )).sort()
+      : [],
+    [pricelists, regionCustomer]
+  );
+
   const previewMatchRate = useMemo(
     () => {
       if (!preview) return 0;
@@ -144,6 +161,8 @@ export function UserDashboard() {
   useEffect(() => {
     setPreview(null);
     setResult(null);
+    setRegionPreview(null);
+    setRegionResult(null);
     setStep('select');
     setError(null);
     setDuplicateWarning(null);
@@ -223,7 +242,9 @@ export function UserDashboard() {
   };
 
   const downloadFromUrl = async (url: string, filename: string) => {
-    const res = await fetch(url);
+    const token = tokenStore.get();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(url, { headers });
     await downloadFromResponse(res, filename);
   };
 
@@ -270,6 +291,73 @@ export function UserDashboard() {
     setError(null);
     setDuplicateWarning(null);
     setConfirmedDuplicate(false);
+    setRegionPreview(null);
+    setRegionResult(null);
+  };
+
+  const handleSwitchMode = (newMode: 'warehouse' | 'region') => {
+    setMode(newMode);
+    setStep('select');
+    setPreview(null);
+    setResult(null);
+    setRegionPreview(null);
+    setRegionResult(null);
+    setError(null);
+    setDuplicateWarning(null);
+    setConfirmedDuplicate(false);
+    setRegionCustomer('');
+  };
+
+  const handleRegionPreview = async () => {
+    if (!regionCustomer || !startDate || !endDate) {
+      setError('Please select a customer and billing period');
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.previewRegionMapping(regionCustomer, startDate, endDate);
+      setRegionPreview(data);
+      setStep('preview');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to preview region mapping');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegionGenerate = async () => {
+    if (!regionCustomer || !startDate || !endDate) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.generateRegionInvoice(regionCustomer, startDate, endDate);
+      setRegionResult(data);
+      setStep('result');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate region invoice');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegionDownload = () => {
+    if (!regionResult?.auditLogId) return;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const pad2 = (n: number) => String(n).padStart(2, '0');
+        const now = new Date();
+        const stamp = `${pad2(now.getDate())}-${pad2(now.getMonth() + 1)}-${now.getFullYear()} ${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
+        const filename = `${regionCustomer} Combined ${stamp}.xlsx`;
+        await downloadFromUrl(api.downloadInvoice(regionResult.auditLogId), filename);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Download failed');
+      } finally {
+        setLoading(false);
+      }
+    })();
   };
 
   const handleBackToPreview = () => {
@@ -321,22 +409,38 @@ export function UserDashboard() {
           </div>
           <div className="flex gap-0.5 bg-black/5 rounded-xl p-1 text-center text-xs font-semibold min-w-[300px] sm:min-w-[360px]">
             <div className={`flex-1 rounded-lg px-3 py-2 transition-all ${step === 'select' ? 'text-white shadow-sm' : 'text-slate-500'}`}
-              style={step === 'select' ? { background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' } : {}}>
+              style={step === 'select' ? { background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' } : {}}>
               1. Setup
             </div>
             <div className={`flex-1 rounded-lg px-3 py-2 transition-all ${step === 'preview' ? 'text-white shadow-sm' : 'text-slate-500'}`}
-              style={step === 'preview' ? { background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' } : {}}>
+              style={step === 'preview' ? { background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' } : {}}>
               2. Review
             </div>
             <div className={`flex-1 rounded-lg px-3 py-2 transition-all ${step === 'result' ? 'text-white shadow-sm' : 'text-slate-500'}`}
-              style={step === 'result' ? { background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' } : {}}>
+              style={step === 'result' ? { background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' } : {}}>
               3. Download
             </div>
           </div>
         </div>
+        <div className="mt-4 flex gap-0.5 bg-black/5 rounded-xl p-1 text-xs font-semibold max-w-sm">
+          <button
+            type="button"
+            onClick={() => handleSwitchMode('warehouse')}
+            className={`flex-1 rounded-lg px-3 py-2 transition-all ${mode === 'warehouse' ? 'bg-white text-[#1e3a8a] shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+          >
+            By Warehouse
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSwitchMode('region')}
+            className={`flex-1 rounded-lg px-3 py-2 transition-all ${mode === 'region' ? 'bg-white text-[#1e3a8a] shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+          >
+            By Region — All Warehouses
+          </button>
+        </div>
       </section>
 
-      {step === 'select' && (
+      {step === 'select' && mode === 'warehouse' && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           <section className="rounded-2xl bg-white p-5 shadow-md">
             <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
@@ -362,7 +466,7 @@ export function UserDashboard() {
                     setSelectedPricelist('');
                   }}
                   disabled={loadingPricelists}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20 disabled:bg-slate-100 disabled:text-slate-400"
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20 disabled:bg-slate-100 disabled:text-slate-400"
                 >
                   <option value="">Choose a customer</option>
                   {customers.map(customer => (
@@ -384,7 +488,7 @@ export function UserDashboard() {
                     setSelectedPricelist('');
                   }}
                   disabled={!selectedCustomer || loadingPricelists}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400 focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400 focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
                 >
                   <option value="">Choose a warehouse</option>
                   {warehouses.map(warehouse => (
@@ -404,7 +508,7 @@ export function UserDashboard() {
                 value={selectedPricelist}
                 onChange={(e) => setSelectedPricelist(e.target.value ? Number(e.target.value) : '')}
                 disabled={!selectedCustomer || !selectedWarehouse || loadingPricelists}
-                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400 focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400 focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
               >
                 <option value="">Choose a pricelist</option>
                 {filteredPricelists.map(p => (
@@ -440,7 +544,7 @@ export function UserDashboard() {
                   onClick={() => setBillingCycle('full_month')}
                   className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
                     billingCycle === 'full_month'
-                      ? 'bg-white text-[#28258b] shadow-sm'
+                      ? 'bg-white text-[#1e3a8a] shadow-sm'
                       : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
@@ -451,7 +555,7 @@ export function UserDashboard() {
                   onClick={() => setBillingCycle('custom')}
                   className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
                     billingCycle === 'custom'
-                      ? 'bg-white text-[#28258b] shadow-sm'
+                      ? 'bg-white text-[#1e3a8a] shadow-sm'
                       : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
@@ -470,7 +574,7 @@ export function UserDashboard() {
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   disabled={billingCycle === 'full_month'}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
                 />
               </label>
               <label className="block">
@@ -482,7 +586,7 @@ export function UserDashboard() {
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
                   disabled={billingCycle === 'full_month'}
-                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 focus:border-[#28258b] focus:outline-none focus:ring-2 focus:ring-[#28258b]/20"
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
                 />
               </label>
             </div>
@@ -515,103 +619,245 @@ export function UserDashboard() {
               onClick={handlePreview}
               disabled={loading || loadingPricelists || !readyToPreview}
               className="mt-5 w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.99]"
-              style={{ background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' }}
+              style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' }}
             >
               {loading ? 'Loading Preview…' : 'Preview Invoice Match'}
             </button>
           </section>
 
-          <aside className="rounded-2xl bg-white p-5 shadow-md">
-            <h3 className="text-base font-semibold text-slate-950">Selection Summary</h3>
-            <dl className="mt-4 space-y-4 text-sm">
-              <div>
-                <dt className="text-slate-500">Customer</dt>
-                <dd className="mt-1 font-semibold text-slate-900">{selectedCustomer || 'Not selected'}</dd>
+          <aside className="rounded-2xl bg-white shadow-md overflow-hidden">
+            <div className="px-5 py-4" style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' }}>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Configuration</p>
+              <h3 className="mt-0.5 text-base font-semibold text-white">Selection Summary</h3>
+            </div>
+            <div className="p-5 space-y-3">
+              {[
+                { label: 'Customer', value: selectedCustomer },
+                { label: 'Warehouse', value: selectedWarehouse },
+                { label: 'Pricelist', value: selectedPricelistRecord?.name ?? '' },
+                { label: 'Billing dates', value: startDate && endDate ? `${new Date(startDate).toLocaleDateString()} → ${new Date(endDate).toLocaleDateString()}` : '' },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-start gap-3">
+                  <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${value ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    {value ? '✓' : '·'}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs text-slate-500">{label}</div>
+                    <div className={`text-sm font-semibold truncate ${value ? 'text-slate-900' : 'text-slate-400'}`}>{value || 'Not selected'}</div>
+                  </div>
+                </div>
+              ))}
+              <div className="mt-2 rounded-xl bg-[#eef5ff] p-3 text-xs text-slate-600 leading-relaxed">
+                Preview checks Tableau transaction matches before generating the Excel invoice.
               </div>
-              <div>
-                <dt className="text-slate-500">Warehouse</dt>
-                <dd className="mt-1 font-semibold text-slate-900">{selectedWarehouse || 'Not selected'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Pricelist</dt>
-                <dd className="mt-1 font-semibold text-slate-900">{selectedPricelistRecord?.name || 'Not selected'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Billing dates</dt>
-                <dd className="mt-1 font-semibold text-slate-900">
-                  {startDate && endDate ? `${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}` : 'Not selected'}
-                </dd>
-              </div>
-            </dl>
-            <div className="mt-5 rounded border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              The preview step checks how many Tableau transactions match the selected pricelist before the invoice is generated.
             </div>
           </aside>
         </div>
       )}
 
-      {step === 'preview' && preview && (
-        <div className="rounded-2xl bg-white p-5 shadow-md space-y-6">
-          <div className="flex items-center justify-between">
+      {step === 'select' && mode === 'region' && (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <section className="rounded-2xl bg-white p-5 shadow-md">
+            <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-950">Region Invoice Setup</h3>
+                <p className="mt-1 text-sm text-slate-600">Select a customer to generate a combined invoice for all their warehouses at once.</p>
+              </div>
+              <span className="rounded bg-[#e9f6ec] px-3 py-1 text-xs font-semibold text-[#28753a]">All Warehouses</span>
+            </div>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700">Customer</span>
+              <select
+                value={regionCustomer}
+                onChange={(e) => setRegionCustomer(e.target.value)}
+                disabled={loadingPricelists}
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                <option value="">Choose a customer</option>
+                {customers.map(customer => (
+                  <option key={customer} value={customer}>{customer}</option>
+                ))}
+              </select>
+            </label>
+
+            {regionCustomer && regionWarehouses.length > 0 && (
+              <div className="mt-3 rounded-xl border border-[#1e3a8a]/15 bg-[#eef5ff] px-4 py-3 text-sm text-[#1e3a8a]">
+                <span className="font-semibold">{regionWarehouses.length} warehouses</span> will be included in this invoice.
+              </div>
+            )}
+
+            <div className="mt-5 border-t border-slate-200 pt-5">
+              <span className="mb-2 block text-sm font-semibold text-slate-700">Billing Period</span>
+              <div className="grid grid-cols-2 gap-0.5 rounded-xl bg-black/5 p-1">
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle('full_month')}
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${billingCycle === 'full_month' ? 'bg-white text-[#1e3a8a] shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                >
+                  Full Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle('custom')}
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${billingCycle === 'custom' ? 'bg-white text-[#1e3a8a] shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                >
+                  Custom Range
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700">Start Date</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  disabled={billingCycle === 'full_month'}
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700">End Date</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  disabled={billingCycle === 'full_month'}
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]/20"
+                />
+              </label>
+            </div>
+
+            {error && (
+              <div className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+            )}
+
+            <button
+              onClick={handleRegionPreview}
+              disabled={loading || loadingPricelists || !regionCustomer || !startDate || !endDate}
+              className="mt-5 w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.99]"
+              style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' }}
+            >
+              {loading ? 'Loading Preview…' : 'Preview Region Invoice'}
+            </button>
+          </section>
+
+          <aside className="rounded-2xl bg-white shadow-md overflow-hidden">
+            <div className="px-5 py-4" style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' }}>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Region Mode</p>
+              <h3 className="mt-0.5 text-base font-semibold text-white">Warehouse Coverage</h3>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${regionCustomer ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                  {regionCustomer ? '✓' : '·'}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-500">Customer</div>
+                  <div className={`text-sm font-semibold truncate ${regionCustomer ? 'text-slate-900' : 'text-slate-400'}`}>{regionCustomer || 'Not selected'}</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${startDate && endDate ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                  {startDate && endDate ? '✓' : '·'}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-500">Billing dates</div>
+                  <div className={`text-sm font-semibold truncate ${startDate && endDate ? 'text-slate-900' : 'text-slate-400'}`}>
+                    {startDate && endDate ? `${new Date(startDate).toLocaleDateString()} → ${new Date(endDate).toLocaleDateString()}` : 'Not set'}
+                  </div>
+                </div>
+              </div>
+              {regionWarehouses.length > 0 ? (
+                <div className="mt-3 space-y-1.5">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Warehouses ({regionWarehouses.length})</div>
+                  <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                    {regionWarehouses.map(wh => (
+                      <div key={wh} className="flex items-center gap-2 rounded-lg bg-[#eef5ff] px-3 py-1.5 text-sm font-medium text-[#1e3a8a]">
+                        <span className="text-[#58a967] font-bold">·</span>
+                        {wh}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 rounded-xl bg-[#eef5ff] p-3 text-xs text-slate-600 leading-relaxed">
+                  Select a customer to see which warehouses will be included in the combined invoice.
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {mode === 'warehouse' && step === 'preview' && preview && (
+        <div className="space-y-5">
+          <div className="rounded-2xl bg-white p-5 shadow-md flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-950">Review Match Quality</h3>
-              <p className="mt-1 text-sm text-slate-600">{preview.pricelist.name}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#0369a1]">Step 2 of 3</p>
+              <h3 className="mt-0.5 text-xl font-semibold text-slate-950">Review Match Quality</h3>
+              <p className="mt-0.5 text-sm text-slate-500">{preview.pricelist.name}</p>
             </div>
             <button
               onClick={handleReset}
-              className="rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
             >
-              Back
+              ← Back
             </button>
           </div>
 
           {error && (
-            <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               {error}
             </div>
           )}
 
-          <div className="grid gap-4 text-center sm:grid-cols-3">
-            <div className="rounded border border-slate-200 bg-slate-50 p-4">
-              <div className="text-2xl font-bold text-slate-950">
-                {preview.summary.totalTransactions}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #0c1a3a 0%, #1e3a8a 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{preview.summary.totalTransactions}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Total Transactions</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20">
+                <div className="h-full rounded-full bg-white/60" style={{ width: '100%' }} />
               </div>
-              <div className="text-sm text-slate-600">Total Transactions</div>
             </div>
-            <div className="rounded border border-green-200 bg-green-50 p-4">
-              <div className="text-2xl font-bold text-green-700">
-                {preview.summary.matched}
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #10b981 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{preview.summary.matched}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Matched</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20">
+                <div className="h-full rounded-full bg-white/60" style={{ width: `${previewMatchRate}%` }} />
               </div>
-              <div className="text-sm text-green-600">Matched</div>
             </div>
-            <div className="rounded border border-amber-200 bg-amber-50 p-4">
-              <div className="text-2xl font-bold text-amber-700">
-                {preview.summary.unmatched}
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #7c2d12 0%, #f59e0b 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{preview.summary.unmatched}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Needs Review</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20">
+                <div className="h-full rounded-full bg-white/60" style={{ width: `${preview.summary.totalTransactions ? Math.round((preview.summary.unmatched / preview.summary.totalTransactions) * 100) : 0}%` }} />
               </div>
-              <div className="text-sm text-amber-700">Needs Review</div>
             </div>
           </div>
 
-          <div className="rounded border border-slate-200 bg-slate-50 p-4">
-            <div className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-700">
-              <span>Match Rate</span>
-              <span>{previewMatchRate}%</span>
+          <div className="rounded-2xl bg-white p-5 shadow-md">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">Match Rate</span>
+              <span className="text-2xl font-bold" style={{ background: 'linear-gradient(135deg, #1e3a8a, #0369a1)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{previewMatchRate}%</span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-full rounded-full bg-[#58a967]"
-                style={{ width: `${previewMatchRate}%` }}
+                className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${previewMatchRate}%`, background: 'linear-gradient(90deg, #1e3a8a 0%, #0369a1 50%, #58a967 100%)' }}
               />
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
-              <div>Matched: {preview.summary.matched}</div>
-              <div>Unmatched: {preview.summary.unmatched}</div>
+            <div className="mt-3 flex gap-4 text-xs text-slate-500">
+              <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />Matched: {preview.summary.matched}</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-full bg-amber-400" />Unmatched: {preview.summary.unmatched}</span>
             </div>
           </div>
 
           <div className={`rounded border p-4 text-sm ${
             preview.activeRule
-              ? 'border-[#28258b]/20 bg-[#28258b]/10 text-[#28258b]'
+              ? 'border-[#1e3a8a]/20 bg-[#1e3a8a]/10 text-[#1e3a8a]'
               : 'border-amber-200 bg-amber-50 text-amber-800'
           }`}>
             <div className="font-semibold">
@@ -672,22 +918,23 @@ export function UserDashboard() {
             <button
               onClick={handleGenerate}
               disabled={loading}
-              className="flex-1 rounded bg-[#58a967] px-4 py-3 text-sm font-semibold text-white hover:bg-[#43864f] disabled:opacity-50"
+              className="flex-1 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all hover:shadow-lg active:scale-[0.99] disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #064e3b 0%, #10b981 100%)' }}
             >
-              {loading ? 'Generating...' : 'Generate Invoice'}
+              {loading ? 'Generating…' : '⚡ Generate Invoice'}
             </button>
             <button
               type="button"
               onClick={handleDownloadTotal}
               disabled={loading}
-              className="rounded border border-[#28258b]/20 bg-[#28258b]/10 px-4 py-3 text-sm font-semibold text-[#28258b] hover:bg-[#28258b]/15 disabled:opacity-50"
+              className="rounded-xl border border-[#1e3a8a]/20 bg-[#1e3a8a]/8 px-4 py-3 text-sm font-semibold text-[#1e3a8a] hover:bg-[#1e3a8a]/15 disabled:opacity-50 transition-colors"
             >
               Download Total
             </button>
             <button
               onClick={handleReset}
               disabled={loading}
-              className="rounded border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
             >
               Cancel
             </button>
@@ -695,53 +942,153 @@ export function UserDashboard() {
         </div>
       )}
 
-      {step === 'result' && result && (
-        <div className="rounded-2xl bg-white p-5 shadow-md space-y-6">
-          <div className="flex items-center justify-between">
+      {mode === 'region' && step === 'preview' && regionPreview && (
+        <div className="space-y-5">
+          <div className="rounded-2xl bg-white p-5 shadow-md flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-950">
-                Invoice Generated Successfully
-              </h3>
-              <p className="mt-1 text-sm text-slate-600">Download the final invoice file or export the transaction review.</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#0369a1]">Step 2 of 3 — Region</p>
+              <h3 className="mt-0.5 text-xl font-semibold text-slate-950">Review Region Match Quality</h3>
+              <p className="mt-0.5 text-sm text-slate-500">{regionPreview.customerName} — {regionPreview.pricelistCount} warehouse{regionPreview.pricelistCount !== 1 ? 's' : ''}</p>
+            </div>
+            <button onClick={handleReset} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+              ← Back
+            </button>
+          </div>
+
+          {error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #0c1a3a 0%, #1e3a8a 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{regionPreview.summary.totalTransactions}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Total Transactions</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20"><div className="h-full rounded-full bg-white/60" style={{ width: '100%' }} /></div>
+            </div>
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #10b981 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{regionPreview.summary.matched}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Matched</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20">
+                <div className="h-full rounded-full bg-white/60" style={{ width: `${regionPreview.summary.totalTransactions ? Math.round((regionPreview.summary.matched / regionPreview.summary.totalTransactions) * 100) : 0}%` }} />
+              </div>
+            </div>
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #7c2d12 0%, #f59e0b 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{regionPreview.summary.unmatched}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Needs Review</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20">
+                <div className="h-full rounded-full bg-white/60" style={{ width: `${regionPreview.summary.totalTransactions ? Math.round((regionPreview.summary.unmatched / regionPreview.summary.totalTransactions) * 100) : 0}%` }} />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-white p-5 shadow-md">
+            <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Per-Warehouse Breakdown</h4>
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr style={{ background: 'linear-gradient(90deg, #f8f7ff 0%, #eef5ff 100%)' }}>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Warehouse</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Pricelist</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Transactions</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Matched</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Unmatched</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {regionPreview.warehouseBreakdown.map((item, i) => (
+                    <tr key={i} className={`border-t border-slate-100 hover:bg-[#f8f7ff] transition-colors ${i % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}`}>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{item.warehouse}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{item.pricelistName}</td>
+                      <td className="px-4 py-3 text-right text-slate-700">{item.total}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-emerald-600">{item.matched}</td>
+                      <td className="px-4 py-3 text-right text-amber-600">{item.unmatched}</td>
+                      <td className="px-4 py-3 text-right">
+                        {item.error ? (
+                          <span className="text-xs text-red-600">Error</span>
+                        ) : (
+                          <span className={`text-xs font-semibold ${item.total > 0 && (item.matched / item.total) >= 0.8 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                            {item.total > 0 ? `${Math.round((item.matched / item.total) * 100)}%` : '—'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={handleRegionGenerate}
+              disabled={loading}
+              className="flex-1 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all hover:shadow-lg active:scale-[0.99] disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #064e3b 0%, #10b981 100%)' }}
+            >
+              {loading ? 'Generating…' : '⚡ Generate Region Invoice'}
+            </button>
+            <button
+              onClick={handleReset}
+              disabled={loading}
+              className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === 'warehouse' && step === 'result' && result && (
+        <div className="space-y-5">
+          <div className="rounded-2xl p-5 shadow-md text-white flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #0c1d4e 0%, #1e3a8a 60%, #1d62a8 100%)' }}>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Step 3 of 3</p>
+              <h3 className="mt-0.5 text-xl font-semibold text-white">Invoice Generated Successfully</h3>
+              <p className="mt-0.5 text-sm text-white/70">Download the final invoice or export the full transaction review.</p>
             </div>
             <button
               onClick={handleReset}
-              className="rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-white/30 px-3 py-2 text-sm font-medium text-white/90 hover:bg-white/15 transition-colors"
             >
               Start New
             </button>
           </div>
 
-          <div className="grid gap-4 text-center sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded border border-slate-200 bg-slate-50 p-4">
-              <div className="text-2xl font-bold text-slate-950">
-                {result.summary.totalTransactions}
-              </div>
-              <div className="text-sm text-slate-600">Transactions</div>
+          {error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {error}
             </div>
-            <div className="rounded border border-green-200 bg-green-50 p-4">
-              <div className="text-2xl font-bold text-green-700">
-                {result.summary.matched}
-              </div>
-              <div className="text-sm text-green-600">Matched</div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #0c1a3a 0%, #1e3a8a 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{result.summary.totalTransactions}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Transactions</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20"><div className="h-full rounded-full bg-white/60" style={{ width: '100%' }} /></div>
             </div>
-            <div className="rounded border border-amber-200 bg-amber-50 p-4">
-              <div className="text-2xl font-bold text-amber-700">
-                {result.summary.unmatched}
-              </div>
-              <div className="text-sm text-amber-700">Unmatched</div>
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #10b981 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{result.summary.matched}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Matched</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20"><div className="h-full rounded-full bg-white/60" style={{ width: `${result.summary.totalTransactions ? Math.round((result.summary.matched / result.summary.totalTransactions) * 100) : 0}%` }} /></div>
             </div>
-            <div className="rounded border border-[#28258b]/20 bg-[#28258b]/10 p-4">
-              <div className="text-2xl font-bold text-[#28258b]">
-                {result.summary.filledRows}
-              </div>
-              <div className="text-sm text-[#28258b]">Rows Filled</div>
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #7c2d12 0%, #f59e0b 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{result.summary.unmatched}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Unmatched</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20"><div className="h-full rounded-full bg-white/60" style={{ width: `${result.summary.totalTransactions ? Math.round((result.summary.unmatched / result.summary.totalTransactions) * 100) : 0}%` }} /></div>
+            </div>
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #0c4a6e 0%, #0284c7 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{result.summary.filledRows}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Rows Filled</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20"><div className="h-full rounded-full bg-white/60" style={{ width: '100%' }} /></div>
             </div>
           </div>
 
+          <div className="rounded-2xl bg-white p-5 shadow-md space-y-4">
+
           <div className={`rounded border p-4 text-sm ${
             result.activeRule
-              ? 'border-[#28258b]/20 bg-[#28258b]/10 text-[#28258b]'
+              ? 'border-[#1e3a8a]/20 bg-[#1e3a8a]/10 text-[#1e3a8a]'
               : 'border-amber-200 bg-amber-50 text-amber-800'
           }`}>
             <div className="font-semibold">
@@ -765,43 +1112,41 @@ export function UserDashboard() {
           )}
 
           {result.filledRows.length > 0 && (
-            <div className="overflow-x-auto">
-              <h4 className="mb-2 font-semibold text-slate-950">Filled Rows</h4>
-              <table className="w-full border-collapse text-sm">
-                <thead className="bg-slate-100 text-slate-700">
-                  <tr>
-                    <th className="p-2 text-left">Sheet</th>
-                    <th className="p-2 text-left">Row</th>
-                    <th className="p-2 text-right">Old QTY</th>
-                    <th className="p-2 text-right">New QTY</th>
-                    <th className="p-2 text-right">Old Total</th>
-                    <th className="p-2 text-right">New Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.filledRows.slice(0, 10).map((row, i) => (
-                    <tr key={i} className="border-b border-slate-200 hover:bg-slate-50">
-                      <td className="p-2">{row.sheet}</td>
-                      <td className="p-2">{row.row}</td>
-                      <td className="p-2 text-right">{row.oldQty ?? '-'}</td>
-                      <td className="p-2 text-right font-semibold text-green-700">
-                        {row.newQty}
-                      </td>
-                      <td className="p-2 text-right">{row.oldTotal.toFixed(2)}</td>
-                      <td className="p-2 text-right font-semibold">
-                        {row.newTotal.toFixed(2)}
-                      </td>
+            <div>
+              <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Filled Rows</h4>
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr style={{ background: 'linear-gradient(90deg, #f8f7ff 0%, #eef5ff 100%)' }}>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Sheet</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Row</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Old QTY</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">New QTY</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Old Total</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">New Total</th>
                     </tr>
-                  ))}
-                  {result.filledRows.length > 10 && (
-                    <tr>
-                      <td colSpan={6} className="p-2 text-center text-slate-500">
-                        ... and {result.filledRows.length - 10} more rows
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {result.filledRows.slice(0, 10).map((row, i) => (
+                      <tr key={i} className={`border-t border-slate-100 hover:bg-[#f8f7ff] transition-colors ${i % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}`}>
+                        <td className="px-4 py-3 font-medium text-slate-700">{row.sheet}</td>
+                        <td className="px-4 py-3 text-slate-500">{row.row}</td>
+                        <td className="px-4 py-3 text-right text-slate-400">{row.oldQty ?? '—'}</td>
+                        <td className="px-4 py-3 text-right font-bold text-emerald-600">{row.newQty}</td>
+                        <td className="px-4 py-3 text-right text-slate-400">{row.oldTotal.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-slate-900">{row.newTotal.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                    {result.filledRows.length > 10 && (
+                      <tr className="border-t border-slate-100 bg-slate-50">
+                        <td colSpan={6} className="px-4 py-3 text-center text-xs text-slate-400">
+                          +{result.filledRows.length - 10} more rows in the downloaded file
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -823,15 +1168,15 @@ export function UserDashboard() {
               type="button"
               onClick={handleBackToPreview}
               disabled={loading || !preview}
-              className="flex-1 rounded border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-50 transition-colors"
             >
-              Back to Review
+              ← Back to Review
             </button>
             <button
               type="button"
               onClick={handleDownloadTotal}
               disabled={loading}
-              className="flex-1 rounded border border-[#28258b]/20 bg-[#28258b]/10 px-4 py-3 text-sm font-semibold text-[#28258b] hover:bg-[#28258b]/15 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-[#1e3a8a]/20 bg-[#1e3a8a]/8 px-4 py-3 text-sm font-semibold text-[#1e3a8a] hover:bg-[#1e3a8a]/15 disabled:opacity-50 transition-colors"
             >
               Download Total
             </button>
@@ -839,10 +1184,115 @@ export function UserDashboard() {
               onClick={handleDownload}
               disabled={loading}
               className="flex-1 rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-lg active:scale-[0.99]"
-              style={{ background: 'linear-gradient(135deg, #28258b 0%, #7c3aed 100%)' }}
+              style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' }}
             >
-              Download Invoice Excel
+              {loading ? 'Downloading…' : '⬇ Download Invoice Excel'}
             </button>
+          </div>
+        </div>
+      </div>
+      )}
+
+      {mode === 'region' && step === 'result' && regionResult && (
+        <div className="space-y-5">
+          <div className="rounded-2xl p-5 shadow-md text-white flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #0c1d4e 0%, #1e3a8a 60%, #1d62a8 100%)' }}>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Step 3 of 3 — Region Invoice</p>
+              <h3 className="mt-0.5 text-xl font-semibold text-white">Combined Invoice Generated</h3>
+              <p className="mt-0.5 text-sm text-white/70">{regionResult.customerName} — all warehouses combined</p>
+            </div>
+            <button onClick={handleReset} className="rounded-lg border border-white/30 px-3 py-2 text-sm font-medium text-white/90 hover:bg-white/15 transition-colors">
+              Start New
+            </button>
+          </div>
+
+          {error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #0c1a3a 0%, #1e3a8a 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{regionResult.summary.totalTransactions}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Transactions</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20"><div className="h-full rounded-full bg-white/60" style={{ width: '100%' }} /></div>
+            </div>
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #10b981 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{regionResult.summary.matched}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Matched</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20"><div className="h-full rounded-full bg-white/60" style={{ width: `${regionResult.summary.totalTransactions ? Math.round((regionResult.summary.matched / regionResult.summary.totalTransactions) * 100) : 0}%` }} /></div>
+            </div>
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #7c2d12 0%, #f59e0b 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{regionResult.summary.unmatched}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Unmatched</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20"><div className="h-full rounded-full bg-white/60" style={{ width: `${regionResult.summary.totalTransactions ? Math.round((regionResult.summary.unmatched / regionResult.summary.totalTransactions) * 100) : 0}%` }} /></div>
+            </div>
+            <div className="rounded-2xl p-5 shadow-md text-white" style={{ background: 'linear-gradient(135deg, #0c4a6e 0%, #0284c7 100%)' }}>
+              <div className="text-4xl font-bold tracking-tight">{regionResult.summary.filledRows}</div>
+              <div className="mt-1.5 text-sm font-medium text-white/70">Rows Filled</div>
+              <div className="mt-3 h-1 rounded-full bg-white/20"><div className="h-full rounded-full bg-white/60" style={{ width: '100%' }} /></div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-white p-5 shadow-md space-y-4">
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Per-Warehouse Results</h4>
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr style={{ background: 'linear-gradient(90deg, #f8f7ff 0%, #eef5ff 100%)' }}>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Warehouse</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Matched</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Unmatched</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Rows Filled</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {regionResult.warehouseBreakdown.map((item, i) => (
+                    <tr key={i} className={`border-t border-slate-100 hover:bg-[#f8f7ff] transition-colors ${i % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}`}>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{item.warehouse}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-emerald-600">{item.matched}</td>
+                      <td className="px-4 py-3 text-right text-amber-600">{item.unmatched}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-[#0369a1]">{item.filledRows ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        {item.error ? (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">Error</span>
+                        ) : (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">OK</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {regionResult.errors.length > 0 && (
+              <div className="rounded border border-red-200 bg-red-50 p-4">
+                <h4 className="font-semibold text-red-800 mb-2">Errors</h4>
+                <ul className="text-sm text-red-700 space-y-1">
+                  {regionResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleRegionDownload}
+                disabled={loading}
+                className="flex-1 rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-lg active:scale-[0.99]"
+                style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #0369a1 100%)' }}
+              >
+                {loading ? 'Downloading…' : '⬇ Download Combined Invoice'}
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={loading}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
+              >
+                Start New
+              </button>
+            </div>
           </div>
         </div>
       )}

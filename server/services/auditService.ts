@@ -16,7 +16,11 @@ export type AuditAction =
   | 'user_enabled'
   | 'user_deleted'
   | 'role_changed'
-  | 'password_reset_issued';
+  | 'password_reset_issued'
+  | 'user_invite_accepted'
+  | 'user_invited'
+  | 'user_invite_revoked'
+  | 'user_invite_resent';
 
 interface LogOptions {
   actorId?: string | null;

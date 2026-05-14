@@ -170,7 +170,8 @@ router.post('/invite/:token/accept', inviteAcceptRateLimit, (req, res) => {
   if (!/[A-Z]/.test(password)) return res.status(400).json({ error: 'Password must contain at least one uppercase letter' });
   if (!/[0-9]/.test(password)) return res.status(400).json({ error: 'Password must contain at least one number' });
 
-  const tokenHash = createHash('sha256').update(req.params.token).digest('hex');
+  const token = Array.isArray(req.params.token) ? req.params.token[0] : req.params.token;
+  const tokenHash = createHash('sha256').update(token).digest('hex');
   const invite = db.prepare('SELECT * FROM user_invites WHERE token_hash = ?').get(tokenHash) as any;
 
   if (!invite) return res.status(404).json({ error: 'Invalid or expired invite link' });
