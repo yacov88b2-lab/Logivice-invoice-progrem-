@@ -390,7 +390,7 @@ export class RuleEngine {
     step: RuleStep,
     context: RuleEvaluationContext
   ): Promise<{ data: Record<string, any>; errors: string[]; warnings: string[] }> {
-    const { field, operator, value } = step.config;
+    const { field, operator, value, action = 'include' } = step.config;
     const errors: string[] = [];
     const warnings: string[] = [];
     const data: Record<string, any> = {};
@@ -414,30 +414,36 @@ export class RuleEngine {
       return { data, errors, warnings };
     }
 
-    let passes = false;
+    let conditionPasses = false;
 
     switch (operator) {
       case 'equals':
-        passes = fieldValue === value;
+        conditionPasses = fieldValue === value;
+        break;
+      case 'not_equals':
+        conditionPasses = fieldValue !== value;
         break;
       case 'contains':
-        passes = String(fieldValue).includes(String(value));
+        conditionPasses = String(fieldValue).includes(String(value));
         break;
       case 'gt':
-        passes = Number(fieldValue) > Number(value);
+        conditionPasses = Number(fieldValue) > Number(value);
         break;
       case 'lt':
-        passes = Number(fieldValue) < Number(value);
+        conditionPasses = Number(fieldValue) < Number(value);
         break;
       case 'gte':
-        passes = Number(fieldValue) >= Number(value);
+        conditionPasses = Number(fieldValue) >= Number(value);
         break;
       case 'lte':
-        passes = Number(fieldValue) <= Number(value);
+        conditionPasses = Number(fieldValue) <= Number(value);
         break;
       default:
         errors.push(`Unknown operator: ${operator}`);
     }
+
+    // 'include' = pass when condition matches; 'exclude' = pass when condition does NOT match
+    const passes = action === 'exclude' ? !conditionPasses : conditionPasses;
 
     data.passFilter = passes;
     if (!passes) {
